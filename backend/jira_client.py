@@ -6,12 +6,23 @@ operations used when pushing staged changes.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 import requests
 from requests.auth import HTTPBasicAuth
 
 from . import config
+
+
+def _parse_dt(value: str | None) -> datetime | None:
+    """Parse a Jira timestamp (e.g. 2025-02-20T10:30:00.000+0000)."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 class JiraError(RuntimeError):
@@ -287,6 +298,54 @@ class JiraClient:
             "POST", f"/issue/{key}/comment",
             json={"body": text_to_adf(text)},
         )
+
+    # -- stale "On Hold" detection -----------------------------------------
+
+    def entered_status_date(self, key: str, status_name: str) -> datetime | None:
+        """When the issue most recently transitioned INTO ``status_name``.
+
+        Reads the issue changelog. Returns None if there is no such transition
+        (e.g. it was created directly in that status).
+        """
+        cl = self._request("GET", f"/issue/{key}/changelog?maxResults=100")
+        latest: datetime | None = None
+        for history in cl.get("values", []):
+            for item in history.get("items", []):
+                if item.get("field") == "status" and item.get("toString") == status_name:
+                    ts = _parse_dt(history.get("created"))
+                    if ts and (latest is None or ts > latest):
+                        latest = ts
+        return latest
+
+    def find_stale_onhold(self, months: int, onhold_status: str) -> list[dict]:
+        """Items assigned to me that have been in ``onhold_status`` too long.
+
+        Duration is measured from when the issue entered the on-hold status
+        (per changelog), falling back to its creation date.
+        """
+        items = self.search(
+            f'assignee = currentUser() AND status = "{onhold_status}" ORDER BY updated',
+            fields=["summary", "issuetype", "status", "created"],
+        )
+        now = datetime.now(timezone.utc)
+        cutoff_days = months * 30.4
+        stale: list[dict] = []
+        for issue in items:
+            key = issue["key"]
+            f = issue.get("fields", {})
+            since = self.entered_status_date(key, onhold_status) or _parse_dt(f.get("created"))
+            if since is None:
+                continue
+            age_days = (now - since).days
+            if age_days >= cutoff_days:
+                stale.append({
+                    "key": key,
+                    "summary": f.get("summary", ""),
+                    "type": (f.get("issuetype") or {}).get("name", ""),
+                    "since": since.date().isoformat(),
+                    "months": round(age_days / 30.4, 1),
+                })
+        return stale
 
 
 def from_config() -> JiraClient:

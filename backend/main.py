@@ -5,6 +5,8 @@ changes can be overlaid without re-hitting Jira on every render.
 """
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -157,6 +159,9 @@ def get_meta():
         "priorities": priorities,
         "defaultProject": config.DEFAULT_PROJECT,
         "rootTypes": config.ROOT_TYPES,
+        "autoCancelOnHold": config.AUTO_CANCEL_STALE_ONHOLD,
+        "onholdMonths": config.ONHOLD_MONTHS,
+        "onholdStatus": config.ONHOLD_STATUS,
     }
 
 
@@ -222,6 +227,78 @@ def delete_staging(op_id: str):
 def clear_staging():
     staging.clear()
     return {"count": 0}
+
+
+def _audit_cancel(key: str, cand: dict) -> None:
+    """Append one JSON line per auto-cancellation for an audit trail."""
+    rec = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "action": "auto_cancel_stale_onhold",
+        "key": key,
+        "onHoldSince": cand.get("since"),
+        "months": cand.get("months"),
+        "summary": cand.get("summary", ""),
+    }
+    try:
+        with open(config.AUDIT_LOG, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec) + "\n")
+    except OSError:
+        pass
+
+
+@app.post("/api/scan/onhold")
+def scan_onhold(apply: bool | None = None, force: bool = False):
+    """Find items in the on-hold status longer than the threshold.
+
+    ``apply`` (defaults to the JIRA_AUTO_CANCEL_STALE_ONHOLD setting) controls
+    whether matches are transitioned to Cancelled. If more than the safety cap
+    would be cancelled, the scan returns ``capped: true`` without cancelling
+    anything unless ``force`` is set.
+    """
+    c = client()
+    try:
+        candidates = c.find_stale_onhold(config.ONHOLD_MONTHS, config.ONHOLD_STATUS)
+    except JiraError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    do_apply = config.AUTO_CANCEL_STALE_ONHOLD if apply is None else apply
+    report: dict[str, Any] = {
+        "candidates": candidates,
+        "cancelled": [],
+        "skipped": [],
+        "errors": [],
+        "applied": do_apply,
+        "capped": False,
+        "thresholdMonths": config.ONHOLD_MONTHS,
+        "onholdStatus": config.ONHOLD_STATUS,
+        "cancelStatus": config.CANCEL_STATUS,
+    }
+
+    if not do_apply or not candidates:
+        return report
+
+    if len(candidates) > config.AUTO_CANCEL_CAP and not force:
+        report["capped"] = True
+        report["cap"] = config.AUTO_CANCEL_CAP
+        return report  # require explicit confirmation before mass-cancelling
+
+    for cand in candidates:
+        key = cand["key"]
+        try:
+            ok = c.transition_issue_by_name(key, config.CANCEL_STATUS)
+            if ok:
+                report["cancelled"].append(cand)
+                _audit_cancel(key, cand)
+            else:
+                report["skipped"].append(
+                    {**cand, "reason": f"no '{config.CANCEL_STATUS}' transition available"}
+                )
+        except JiraError as exc:
+            report["errors"].append({"key": key, "error": str(exc)})
+
+    if report["cancelled"]:
+        _cache["tree"] = None  # cancelled items leave the active tree
+    return report
 
 
 @app.post("/api/push")

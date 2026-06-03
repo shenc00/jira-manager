@@ -507,13 +507,66 @@ window.clearStaging = clearStaging;
 window.pushChanges = pushChanges;
 window.reviewChanges = reviewChanges;
 
+// ---------- stale on-hold auto-cancel ----------
+async function runOnHoldScan(opts = {}) {
+  // opts.manual = user clicked the button (force apply even if auto is off)
+  // opts.force  = bypass the safety cap after confirmation
+  const params = new URLSearchParams();
+  if (opts.manual) params.set("apply", "true");
+  if (opts.force) params.set("force", "true");
+  let r;
+  try {
+    r = await api("/api/scan/onhold" + (params.toString() ? "?" + params : ""), { method: "POST" });
+  } catch (e) {
+    if (opts.manual) toast("On-hold scan failed: " + e.message, "error");
+    return;
+  }
+
+  if (r.capped) {
+    const ok = await confirmPrompt(
+      "⚠ Safety cap reached",
+      `${r.candidates.length} items have been in "${r.onholdStatus}" for over ${r.thresholdMonths} months — ` +
+      `more than the safety cap of ${r.cap}. This usually means something unexpected. ` +
+      `Cancel all ${r.candidates.length} now?`,
+      "Yes, cancel all", "No, leave them");
+    if (ok) return runOnHoldScan({ ...opts, force: true });
+    return;
+  }
+
+  if (!r.applied) {
+    // auto-cancel disabled: just report what would qualify
+    if (r.candidates.length) {
+      toast(`${r.candidates.length} item(s) on hold > ${r.thresholdMonths}mo (auto-cancel is off).`);
+    } else if (opts.manual) {
+      toast("No items have been on hold past the threshold.", "success");
+    }
+    return;
+  }
+
+  if (r.cancelled.length) {
+    toast(`Auto-cancelled ${r.cancelled.length} stale on-hold item(s): ${r.cancelled.map((c) => c.key).join(", ")}`, "success");
+    await loadTree(true);
+  } else if (opts.manual) {
+    toast("No items have been on hold past the threshold.", "success");
+  }
+  if (r.skipped.length) toast(`${r.skipped.length} skipped (no Cancelled transition).`, "error");
+  if (r.errors.length) toast(`${r.errors.length} cancellation error(s) — see console.`, "error");
+  if (r.errors.length) console.warn("On-hold cancel errors:", r.errors);
+}
+
 // ---------- wire up ----------
 $("#btn-new").onclick = newItemFlow;
-$("#btn-refresh").onclick = () => loadTree(true);
+$("#btn-refresh").onclick = async () => {
+  await loadTree(true);
+  if (META.autoCancelOnHold) runOnHoldScan();
+};
 $("#btn-review").onclick = reviewChanges;
+$("#btn-onhold").onclick = () => runOnHoldScan({ manual: true });
 $("#chk-completed").onchange = () => loadTree(true);
 
 (async function init() {
   await loadMeta();
   await loadTree();
+  // "Automatically on every load": run the stale on-hold cancellation now.
+  if (META.autoCancelOnHold) runOnHoldScan();
 })();

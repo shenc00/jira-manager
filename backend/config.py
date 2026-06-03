@@ -25,10 +25,34 @@ HIDE_DONE = os.environ.get("JIRA_HIDE_DONE", "true").strip().lower() in (
     "1", "true", "yes", "on",
 )
 
+
+def _as_bool(value: str, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    return value.strip().lower() in ("1", "true", "yes", "on")
+
+
+# --- Auto-cancel stale "On Hold" items -------------------------------------
+# When enabled, items assigned to you that have been in ONHOLD_STATUS for more
+# than ONHOLD_MONTHS are transitioned to CANCEL_STATUS. This is an irreversible
+# write to Jira, so it is OFF by default in code; enable it in your own .env.
+AUTO_CANCEL_STALE_ONHOLD = _as_bool(
+    os.environ.get("JIRA_AUTO_CANCEL_STALE_ONHOLD", ""), default=False
+)
+ONHOLD_STATUS = os.environ.get("JIRA_ONHOLD_STATUS", "On Hold").strip()
+CANCEL_STATUS = os.environ.get("JIRA_CANCEL_STATUS", "Cancelled").strip()
+ONHOLD_MONTHS = int(os.environ.get("JIRA_ONHOLD_MONTHS", "6") or "6")
+# Safety valve: if more than this many items would be auto-cancelled in one
+# scan, pause and require explicit confirmation instead of mass-cancelling.
+AUTO_CANCEL_CAP = int(os.environ.get("JIRA_AUTO_CANCEL_CAP", "25") or "25")
+
 # Where staged changes and the cached tree are persisted.
 DATA_DIR = ROOT_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 STAGING_FILE = DATA_DIR / "staging.json"
+
+# Audit trail of every auto-cancellation (one JSON line per item).
+AUDIT_LOG = DATA_DIR / "auto_cancel.log"
 
 
 def missing_config() -> list[str]:

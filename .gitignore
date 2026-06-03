@@ -3,6 +3,7 @@
 
 # Local staging + cached data (do not commit your Jira data)
 data/*.json
+data/*.log
 
 # Python
 __pycache__/

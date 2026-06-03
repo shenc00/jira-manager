@@ -64,8 +64,12 @@ async function loadMeta() {
 
 async function loadTree(refresh = false) {
   $("#tree").innerHTML = `<p class="muted">Loading…</p>`;
+  const showCompleted = $("#chk-completed") && $("#chk-completed").checked;
+  const params = new URLSearchParams();
+  if (refresh) params.set("refresh", "true");
+  if (showCompleted) params.set("show_completed", "true");
   try {
-    const data = await api("/api/tree" + (refresh ? "?refresh=true" : ""));
+    const data = await api("/api/tree" + (params.toString() ? "?" + params : ""));
     $("#who").textContent = data.me ? `Signed in as ${data.me}` : "";
     renderTree(data.tree);
   } catch (e) {
@@ -507,6 +511,7 @@ window.reviewChanges = reviewChanges;
 $("#btn-new").onclick = newItemFlow;
 $("#btn-refresh").onclick = () => loadTree(true);
 $("#btn-review").onclick = reviewChanges;
+$("#chk-completed").onchange = () => loadTree(true);
 
 (async function init() {
   await loadMeta();

@@ -127,16 +127,19 @@ def health():
 
 
 @app.get("/api/tree")
-def get_tree(refresh: bool = False):
-    if _cache["tree"] is None or refresh:
+def get_tree(refresh: bool = False, show_completed: bool = False):
+    hide_done = config.HIDE_DONE and not show_completed
+    if _cache["tree"] is None or refresh or _cache.get("hide_done") != hide_done:
         c = client()
         try:
             _cache["me"] = c.myself()
-            _cache["tree"] = c.build_tree(config.ROOT_TYPES)
+            _cache["tree"] = c.build_tree(config.ROOT_TYPES, hide_done=hide_done)
+            _cache["hide_done"] = hide_done
         except JiraError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
     return {
         "me": (_cache["me"] or {}).get("displayName", ""),
+        "hideDone": hide_done,
         "tree": _overlay(_cache["tree"]),
     }
 

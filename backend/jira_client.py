@@ -153,27 +153,39 @@ class JiraClient:
     @staticmethod
     def _node(issue: dict) -> dict:
         f = issue.get("fields", {})
+        status = f.get("status") or {}
         return {
             "key": issue["key"],
             "summary": f.get("summary", ""),
             "type": (f.get("issuetype") or {}).get("name", ""),
-            "status": (f.get("status") or {}).get("name", ""),
+            "status": status.get("name", ""),
+            "statusCategory": (status.get("statusCategory") or {}).get("key", ""),
             "assignee": (f.get("assignee") or {}).get("displayName", "Unassigned"),
             "children": [],
         }
 
-    def build_tree(self, root_types: list[str]) -> list[dict]:
+    @staticmethod
+    def _is_done(issue: dict) -> bool:
+        status = issue.get("fields", {}).get("status") or {}
+        return (status.get("statusCategory") or {}).get("key", "") == "done"
+
+    def build_tree(self, root_types: list[str], hide_done: bool = False) -> list[dict]:
         """Return roots (epics/tasks assigned to me) with descendants nested.
 
         Roots are issues assigned to the current user whose type is in
         ``root_types``. Children are fetched level-by-level via the ``parent``
         field, so sub-tasks (even if assigned to others) are included.
+
+        When ``hide_done`` is true, issues in Jira's "Done" status category
+        (e.g. Completed, Done, Cancelled) are excluded at every level.
         """
         types = ", ".join(f'"{t}"' for t in root_types)
-        roots = self.search(
-            f"assignee = currentUser() AND issuetype in ({types}) "
-            "ORDER BY issuetype, created"
-        )
+        jql = f"assignee = currentUser() AND issuetype in ({types})"
+        if hide_done:
+            jql += " AND statusCategory != Done"
+        jql += " ORDER BY issuetype, created"
+        roots = self.search(jql)
+
         nodes: dict[str, dict] = {}
         tree_roots: list[dict] = []
         for issue in roots:
@@ -192,6 +204,8 @@ class JiraClient:
                 if key in seen:
                     continue
                 seen.add(key)
+                if hide_done and self._is_done(child):
+                    continue  # skip completed sub-tasks/children
                 node = self._node(child)
                 nodes[key] = node
                 parent_key = (child["fields"].get("parent") or {}).get("key")

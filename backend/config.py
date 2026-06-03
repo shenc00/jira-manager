@@ -19,6 +19,12 @@ ROOT_TYPES = [
     if t.strip()
 ]
 
+# Hide issues in Jira's "Done" status category (Completed / Done / Cancelled)
+# by default. Can be toggled per-request from the UI.
+HIDE_DONE = os.environ.get("JIRA_HIDE_DONE", "true").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+
 # Where staged changes and the cached tree are persisted.
 DATA_DIR = ROOT_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)

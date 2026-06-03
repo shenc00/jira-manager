@@ -12,7 +12,7 @@ from typing import Any
 import requests
 from requests.auth import HTTPBasicAuth
 
-from . import config
+from . import config, fields as fields_mod
 
 
 def _parse_dt(value: str | None) -> datetime | None:
@@ -148,7 +148,10 @@ class JiraClient:
 
     def search(self, jql: str, fields: list[str] | None = None) -> list[dict]:
         """Run JQL via the enhanced search endpoint, following pagination."""
-        fields = fields or ["summary", "issuetype", "status", "assignee", "parent"]
+        fields = fields or [
+            "summary", "issuetype", "status", "assignee", "parent",
+            fields_mod.TARGET_COMPLETION_FIELD,
+        ]
         issues: list[dict] = []
         token: str | None = None
         while True:
@@ -165,6 +168,8 @@ class JiraClient:
     def _node(issue: dict) -> dict:
         f = issue.get("fields", {})
         status = f.get("status") or {}
+        target = f.get(fields_mod.TARGET_COMPLETION_FIELD)
+        flag, wdays = fields_mod.due_flag(target)
         return {
             "key": issue["key"],
             "summary": f.get("summary", ""),
@@ -172,6 +177,10 @@ class JiraClient:
             "status": status.get("name", ""),
             "statusCategory": (status.get("statusCategory") or {}).get("key", ""),
             "assignee": (f.get("assignee") or {}).get("displayName", "Unassigned"),
+            "targetCompletion": fields_mod.display_value(
+                fields_mod.TARGET_COMPLETION_FIELD, target),
+            "dueFlag": flag,
+            "workingDays": wdays,
             "children": [],
         }
 
@@ -231,10 +240,12 @@ class JiraClient:
     # -- single issue -------------------------------------------------------
 
     def get_issue(self, key: str) -> dict:
-        fields = (
-            "summary,description,issuetype,status,assignee,priority,labels,"
-            "duedate,parent,comment,created,updated,reporter"
-        )
+        base = [
+            "summary", "description", "issuetype", "status", "assignee",
+            "priority", "labels", "duedate", "parent", "comment", "created",
+            "updated", "reporter",
+        ]
+        fields = ",".join(base + fields_mod.CRITICAL_IDS)
         data = self._request("GET", f"/issue/{key}?fields={fields}")
         f = data.get("fields", {})
         comments = [
@@ -245,6 +256,25 @@ class JiraClient:
             }
             for c in (f.get("comment") or {}).get("comments", [])
         ]
+
+        # Which critical fields are editable for THIS issue (per editmeta).
+        try:
+            editmeta = self._request("GET", f"/issue/{key}/editmeta").get("fields", {})
+        except JiraError:
+            editmeta = {}
+        critical = [
+            {
+                "id": spec["id"],
+                "name": spec["name"],
+                "kind": spec["kind"],
+                "value": fields_mod.display_value(spec["id"], f.get(spec["id"])),
+                "editable": spec["id"] in editmeta,
+            }
+            for spec in fields_mod.CRITICAL_FIELDS
+        ]
+
+        target = f.get(fields_mod.TARGET_COMPLETION_FIELD)
+        flag, wdays = fields_mod.due_flag(target)
         return {
             "key": data["key"],
             "summary": f.get("summary", ""),
@@ -259,7 +289,38 @@ class JiraClient:
             "reporter": (f.get("reporter") or {}).get("displayName", ""),
             "project": data["key"].split("-")[0],
             "comments": comments,
+            "critical": critical,
+            "dueFlag": flag,
+            "workingDays": wdays,
         }
+
+    def get_labels(self) -> list[str]:
+        """All labels defined in the instance, for the selection dropdown."""
+        labels: list[str] = []
+        start = 0
+        while True:
+            data = self._request("GET", f"/label?maxResults=1000&startAt={start}")
+            labels.extend(data.get("values", []))
+            if data.get("isLast", True) or not data.get("values"):
+                break
+            start += len(data["values"])
+        return labels
+
+    def createmeta_field_ids(self, project_key: str, issuetype: str) -> set[str]:
+        """Field IDs creatable for an issue type (used to drive the create form)."""
+        path = (
+            f"/issue/createmeta?projectKeys={project_key}"
+            f"&issuetypeNames={requests.utils.quote(issuetype)}"
+            "&expand=projects.issuetypes.fields"
+        )
+        data = self._request("GET", path)
+        projects = data.get("projects", [])
+        if not projects:
+            return set()
+        types = projects[0].get("issuetypes", [])
+        if not types:
+            return set()
+        return set(types[0].get("fields", {}).keys())
 
     def get_transitions(self, key: str) -> list[dict]:
         data = self._request("GET", f"/issue/{key}/transitions")

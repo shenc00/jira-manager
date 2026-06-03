@@ -18,6 +18,7 @@ import secrets
 from pathlib import Path
 from typing import Any
 
+from . import fields as fields_mod
 from .jira_client import JiraClient, text_to_adf
 
 
@@ -110,7 +111,9 @@ class StagingStore:
         if data.get("duedate"):
             fields["duedate"] = data["duedate"]
         for field_id, value in (data.get("custom") or {}).items():
-            fields[field_id] = value
+            formatted = fields_mod.format_custom(field_id, value)
+            if formatted is not None:
+                fields[field_id] = formatted
         return fields
 
     def push(self, client: JiraClient) -> dict:
@@ -211,7 +214,8 @@ class StagingStore:
         if changes.get("duedate"):
             fields["duedate"] = changes["duedate"]
         for field_id, value in (changes.get("custom") or {}).items():
-            fields[field_id] = value
+            # An empty value clears the field (None), so include it explicitly.
+            fields[field_id] = fields_mod.format_custom(field_id, value)
         if fields:
             client.update_issue(key, fields)
         if changes.get("comment"):

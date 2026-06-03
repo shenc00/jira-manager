@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import config
+from . import fields as fields_module
 from .jira_client import JiraError, from_config
 from .staging import StagingStore
 
@@ -178,6 +179,28 @@ def get_issue_types(project: str):
 def search_users(project: str, query: str = ""):
     c = client()
     return {"users": c.search_assignable(project, query or " ")}
+
+
+@app.get("/api/meta/labels")
+def get_labels():
+    c = client()
+    try:
+        return {"labels": c.get_labels()}
+    except JiraError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/api/meta/createfields")
+def get_create_fields(project: str, issuetype: str):
+    """Which critical date fields can be set when creating this issue type."""
+    c = client()
+    try:
+        ids = c.createmeta_field_ids(project, issuetype)
+    except JiraError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {
+        "critical": [f for f in fields_module.CRITICAL_FIELDS if f["id"] in ids],
+    }
 
 
 @app.get("/api/issue/{key}")

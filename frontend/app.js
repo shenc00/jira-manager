@@ -5,6 +5,8 @@ const $ = (sel) => document.querySelector(sel);
 const collapsed = new Set();          // keys whose children are hidden
 let selectedKey = null;
 let META = { projects: [], priorities: [], defaultProject: "", rootTypes: [] };
+let ALL_LABELS = [];                  // every label in Jira, for the dropdown
+let _origLabels = [];                 // labels of the currently open item
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -60,6 +62,7 @@ function confirmPrompt(title, message, yesLabel = "Yes", noLabel = "No") {
 // ---------- load + render tree ----------
 async function loadMeta() {
   try { META = await api("/api/meta"); } catch (e) { /* config maybe missing */ }
+  try { ALL_LABELS = (await api("/api/meta/labels")).labels || []; } catch (e) { ALL_LABELS = []; }
 }
 
 async function loadTree(refresh = false) {
@@ -124,6 +127,19 @@ function renderNode(node) {
   status.textContent = node.status || "";
 
   row.append(toggle, chip, key, summary, status);
+
+  // Highlight items at/over their Target Completion Date (working days).
+  if (node.dueFlag) {
+    row.classList.add("due-" + node.dueFlag);
+    const due = document.createElement("span");
+    due.className = "due-tag due-" + node.dueFlag;
+    const wd = node.workingDays;
+    due.textContent = node.dueFlag === "overdue"
+      ? `OVERDUE ${Math.abs(wd)}wd (${node.targetCompletion})`
+      : `DUE ${wd}wd (${node.targetCompletion})`;
+    due.title = "Target Completion Date " + node.targetCompletion;
+    row.appendChild(due);
+  }
 
   if (node.staged) {
     const tag = document.createElement("span");
@@ -200,8 +216,16 @@ function renderIssueDetail(issue) {
   const stagedNote = (issue.staged_ops && issue.staged_ops.length)
     ? `<div class="staged-note">You have ${issue.staged_ops.length} staged change(s) on this item awaiting push.</div>` : "";
 
+  let dueBanner = "";
+  if (issue.dueFlag === "overdue")
+    dueBanner = `<div class="due-banner due-overdue">⚠ Overdue: target completion was ${Math.abs(issue.workingDays)} working day(s) ago.</div>`;
+  else if (issue.dueFlag === "soon")
+    dueBanner = `<div class="due-banner due-soon">⏰ Due soon: ${issue.workingDays} working day(s) to target completion.</div>`;
+
+  _origLabels = issue.labels || [];
+
   $("#detail").innerHTML = `
-    ${stagedNote}
+    ${stagedNote}${dueBanner}
     <h2>${issue.summary}</h2>
     <p class="muted"><b>${issue.key}</b> · ${issue.type} · reporter ${issue.reporter}
       ${issue.parent ? " · parent " + issue.parent : ""}</p>
@@ -216,7 +240,10 @@ function renderIssueDetail(issue) {
       ${field("Assignee", assigneeInput("f-assignee", issue.assignee && issue.assignee.displayName, issue.project))}
       ${field("Due date", `<input type="date" id="f-duedate" value="${issue.duedate || ""}">`)}
     </div>
-    ${field("Labels (comma separated)", `<input type="text" id="f-labels" value="${(issue.labels||[]).join(", ")}">`)}
+
+    ${criticalFieldsHtml(issue.critical)}
+
+    ${field("Labels", labelsWidget("f-labels", issue.labels))}
     ${field("Add comment", `<textarea id="f-comment" placeholder="Leave blank to skip"></textarea>`)}
 
     <div class="comments"><label class="muted">Existing comments</label>${commentsHtml}</div>
@@ -226,6 +253,52 @@ function renderIssueDetail(issue) {
       <button onclick="selectItem('${issue.key}')">Reset</button>
     </div>`;
   wireAssignee("f-assignee", issue.project);
+}
+
+// Render the critical date fields; disabled (read-only) when not on the
+// issue's edit screen. Each input carries data-cf (field id) and data-orig.
+function criticalFieldsHtml(critical) {
+  if (!critical || !critical.length) return "";
+  const cells = critical.map((f) => {
+    const note = f.editable ? "" : ` <span class="muted">(not editable here)</span>`;
+    const dis = f.editable ? "" : "disabled";
+    return field(f.name + note,
+      `<input type="date" id="cf-${f.id}" data-cf="${f.id}" data-orig="${f.value || ""}" value="${f.value || ""}" ${dis}>`);
+  });
+  let html = `<div class="section-label">Dates</div>`;
+  for (let i = 0; i < cells.length; i += 2)
+    html += `<div class="row">${cells[i] || ""}${cells[i + 1] || ""}</div>`;
+  return html;
+}
+
+function collectCustom() {
+  const out = {};
+  document.querySelectorAll("#detail [data-cf]").forEach((el) => {
+    if (el.disabled) return;
+    if (el.value !== el.dataset.orig) out[el.dataset.cf] = el.value || "";
+  });
+  return Object.keys(out).length ? out : null;
+}
+
+// Labels multi-select dropdown (+ free-text box to add brand-new labels).
+function labelsWidget(id, current) {
+  const cur = current || [];
+  const known = ALL_LABELS.slice();
+  cur.forEach((l) => { if (!known.includes(l)) known.push(l); });
+  known.sort((a, b) => a.localeCompare(b));
+  const opts = known.map((l) =>
+    `<option value="${escapeAttr(l)}" ${cur.includes(l) ? "selected" : ""}>${escapeHtml(l)}</option>`).join("");
+  return `<select id="${id}" class="labels-select" multiple size="6">${opts}</select>
+    <input type="text" id="${id}-new" placeholder="Add new label(s), comma separated" class="labels-new">
+    <div class="muted" style="font-size:11px">Ctrl/Cmd-click to select multiple.</div>`;
+}
+
+function collectLabels(id) {
+  const sel = document.getElementById(id);
+  const chosen = sel ? Array.from(sel.selectedOptions).map((o) => o.value) : [];
+  const raw = (document.getElementById(id + "-new") || {}).value || "";
+  const extras = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  return Array.from(new Set([...chosen, ...extras]));
 }
 
 function escapeHtml(s) { return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
@@ -264,16 +337,19 @@ function resolveAssignee(id) {
 
 // Collect edit form into a changes object
 function collectChanges() {
-  const labelsRaw = document.getElementById("f-labels").value.trim();
+  const labels = collectLabels("f-labels");
+  const labelsChanged =
+    JSON.stringify([...labels].sort()) !== JSON.stringify([..._origLabels].sort());
   return {
     summary: document.getElementById("f-summary").value.trim() || null,
     description: document.getElementById("f-desc").value,
     status: document.getElementById("f-status").value || null,
     priority: document.getElementById("f-priority").value || null,
     duedate: document.getElementById("f-duedate").value || null,
-    labels: labelsRaw ? labelsRaw.split(",").map((s) => s.trim()).filter(Boolean) : null,
+    labels: labelsChanged ? labels : null,
     comment: document.getElementById("f-comment").value.trim() || null,
     assigneeId: resolveAssignee("f-assignee"),
+    custom: collectCustom(),
   };
 }
 
@@ -301,7 +377,7 @@ function newItemFlow() {
     <h3>What do you want to create?</h3>
     <div class="choice-grid">
       <div class="choice" data-cat="Epic"><div class="big">🏔️</div><div>Epic</div></div>
-      <div class="choice" data-cat="Task"><div class="big">✅</div><div>Task</div></div>
+      <div class="choice" data-cat="Story"><div class="big">📘</div><div>Story</div></div>
       <div class="choice" data-cat="Sub-task"><div class="big">↳</div><div>Sub-task</div></div>
     </div>
     <div class="modal-actions"><button onclick="closeModalBtn()">Cancel</button></div>`);
@@ -317,14 +393,15 @@ async function openCreateForm(category, parentRef) {
   const projOpts = projects.map((p) =>
     `<option value="${p.key}" ${p.key === defProj ? "selected" : ""}>${p.key} — ${p.name}</option>`).join("");
 
+  const isEpic = category === "Epic";
   openModal(`
     <h3>New ${category}${parentRef ? ` under ${parentRef}` : ""}</h3>
     ${field("Project", `<select id="c-project">${projOpts}</select>`)}
     ${field("Issue type", `<select id="c-type"><option>${category}</option></select>`)}
     ${parentRef === null
-      ? (category === "Epic" ? "" :
+      ? (isEpic ? "" :
          field("Parent key" + (category === "Sub-task" ? " (required)" : " (optional epic)"),
-               `<input type="text" id="c-parent" placeholder="e.g. PROJ-123">`))
+               `<input type="text" id="c-parent" placeholder="e.g. ISC-123">`))
       : `<input type="hidden" id="c-parent" value="${parentRef}">`}
     ${field("Summary (required)", `<input type="text" id="c-summary">`)}
     ${field("Description", `<textarea id="c-desc"></textarea>`)}
@@ -332,8 +409,10 @@ async function openCreateForm(category, parentRef) {
       ${field("Priority", `<select id="c-priority"><option value="">—</option>${(META.priorities||[]).map(p=>`<option>${p.name}</option>`).join("")}</select>`)}
       ${field("Due date", `<input type="date" id="c-duedate">`)}
     </div>
+    ${isEpic ? field("Initial status", `<input type="text" id="c-status" value="In Progress">`) : `<input type="hidden" id="c-status" value="">`}
+    <div id="c-critical"></div>
     ${field("Assignee", assigneeInput("c-assignee", "", defProj))}
-    ${field("Labels (comma separated)", `<input type="text" id="c-labels">`)}
+    ${field("Labels", labelsWidget("c-labels", []))}
     <div class="modal-actions">
       <button onclick="closeModalBtn()">Cancel</button>
       <button class="primary" id="c-submit">Stage ${category}</button>
@@ -348,10 +427,27 @@ async function openCreateForm(category, parentRef) {
       const wantSub = category === "Sub-task";
       const filtered = issuetypes.filter((t) => t.subtask === wantSub);
       const pool = filtered.length ? filtered : issuetypes;
-      // try to preselect by name match
       const pref = pool.find((t) => t.name.toLowerCase().includes(category.toLowerCase().replace("-", ""))) || pool[0];
       typeSel.innerHTML = pool.map((t) => `<option ${pref && t.name===pref.name?"selected":""}>${t.name}</option>`).join("");
+      loadCreateFields(); // refresh available date fields for the chosen type
     } catch (e) { /* keep default */ }
+  }
+  // which critical date fields are settable on create for this type
+  async function loadCreateFields() {
+    const box = document.getElementById("c-critical");
+    if (!box) return;
+    try {
+      const { critical } = await api(
+        `/api/meta/createfields?project=${encodeURIComponent(projSel.value)}&issuetype=${encodeURIComponent(typeSel.value || category)}`);
+      box.innerHTML = critical.length
+        ? `<div class="section-label">Dates</div>` + (() => {
+            const cells = critical.map((f) =>
+              field(f.name, `<input type="date" id="cf-${f.id}" data-cf="${f.id}" data-orig="">`));
+            let h = ""; for (let i = 0; i < cells.length; i += 2) h += `<div class="row">${cells[i]||""}${cells[i+1]||""}</div>`;
+            return h;
+          })()
+        : "";
+    } catch (e) { box.innerHTML = ""; }
   }
   loadTypes();
   projSel.onchange = loadTypes;
@@ -367,7 +463,12 @@ async function submitCreate(category, parentRef) {
   const parent = parentEl ? parentEl.value.trim() : "";
   if (category === "Sub-task" && !parent) { toast("Sub-tasks need a parent key.", "error"); return; }
 
-  const labelsRaw = document.getElementById("c-labels").value.trim();
+  const labels = collectLabels("c-labels");
+  const status = (document.getElementById("c-status") || {}).value || null;
+  const custom = {};
+  document.querySelectorAll("#c-critical [data-cf]").forEach((el) => {
+    if (el.value) custom[el.dataset.cf] = el.value;
+  });
   const body = {
     project: document.getElementById("c-project").value,
     issuetype: document.getElementById("c-type").value,
@@ -376,8 +477,10 @@ async function submitCreate(category, parentRef) {
     parentRef: parent || null,
     priority: document.getElementById("c-priority").value || null,
     duedate: document.getElementById("c-duedate").value || null,
-    labels: labelsRaw ? labelsRaw.split(",").map(s=>s.trim()).filter(Boolean) : null,
+    labels: labels.length ? labels : null,
+    status: status || null,
     assigneeId: resolveAssignee("c-assignee"),
+    custom: Object.keys(custom).length ? custom : null,
   };
   Object.keys(body).forEach((k) => body[k] == null && delete body[k]);
 
@@ -395,7 +498,7 @@ async function submitCreate(category, parentRef) {
 }
 
 async function afterCreate(category, tempId) {
-  const childMap = { "Epic": "Task", "Task": "Sub-task", "Story": "Sub-task" };
+  const childMap = { "Epic": "Story", "Story": "Sub-task" };
   const childType = childMap[category];
 
   if (childType) {

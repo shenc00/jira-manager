@@ -115,6 +115,24 @@ section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; 
 .staged-new { background: var(--new); }
 .staged-modified { background: var(--amber); }
 
+/* Target-completion due highlighting */
+.node-row.due-soon { background: #fffae6; }
+.node-row.due-overdue { background: #ffebe6; }
+.node-row.due-soon:hover { background: #fff4cc; }
+.node-row.due-overdue:hover { background: #ffd9cf; }
+.due-tag { font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 3px; color: #fff; white-space: nowrap; }
+.due-tag.due-soon { background: var(--amber); }
+.due-tag.due-overdue { background: #de350b; }
+.due-banner { padding: 8px 10px; border-radius: 4px; font-size: 13px; margin-bottom: 12px; }
+.due-banner.due-soon { background: #fffae6; border: 1px solid #ffe380; }
+.due-banner.due-overdue { background: #ffebe6; border: 1px solid #ffbdad; color: #bf2600; }
+
+/* Section label + labels multi-select */
+.section-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 6px 0; font-weight: 700; }
+.labels-select { width: 100%; padding: 4px; border: 1px solid var(--border); border-radius: 4px; font: inherit; }
+.labels-new { width: 100%; margin-top: 6px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 4px; font: inherit; }
+input:disabled { background: #f4f5f7; color: var(--muted); }
+
 /* Detail */
 .detail h2 { text-transform: none; font-size: 18px; color: var(--text); letter-spacing: 0; }
 .field { margin-bottom: 14px; }

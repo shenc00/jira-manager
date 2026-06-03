@@ -7,6 +7,11 @@ let selectedKey = null;
 let META = { projects: [], priorities: [], defaultProject: "", rootTypes: [] };
 let ALL_LABELS = [];                  // every label in Jira, for the dropdown
 let _origLabels = [];                 // labels of the currently open item
+const EPIC_COLORS = [                 // jsw-issue-color values (no native brown)
+  "dark_orange", "orange", "yellow", "dark_yellow", "green", "dark_green",
+  "teal", "dark_teal", "blue", "dark_blue", "purple", "dark_purple",
+  "grey", "dark_grey",
+];
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -409,7 +414,10 @@ async function openCreateForm(category, parentRef) {
       ${field("Priority", `<select id="c-priority"><option value="">—</option>${(META.priorities||[]).map(p=>`<option>${p.name}</option>`).join("")}</select>`)}
       ${field("Due date", `<input type="date" id="c-duedate">`)}
     </div>
-    ${isEpic ? field("Initial status", `<input type="text" id="c-status" value="In Progress">`) : `<input type="hidden" id="c-status" value="">`}
+    ${isEpic ? `<div class="row">
+        ${field("Initial status", `<input type="text" id="c-status" value="In Progress">`)}
+        ${field("Epic colour", `<select id="c-color">${EPIC_COLORS.map(c => `<option value="${c}" ${c==="dark_orange"?"selected":""}>${c}</option>`).join("")}</select>`)}
+      </div>` : `<input type="hidden" id="c-status" value=""><input type="hidden" id="c-color" value="">`}
     <div id="c-critical"></div>
     ${field("Assignee", assigneeInput("c-assignee", "", defProj))}
     ${field("Labels", labelsWidget("c-labels", []))}
@@ -465,6 +473,7 @@ async function submitCreate(category, parentRef) {
 
   const labels = collectLabels("c-labels");
   const status = (document.getElementById("c-status") || {}).value || null;
+  const epicColor = (document.getElementById("c-color") || {}).value || null;
   const custom = {};
   document.querySelectorAll("#c-critical [data-cf]").forEach((el) => {
     if (el.value) custom[el.dataset.cf] = el.value;
@@ -479,6 +488,7 @@ async function submitCreate(category, parentRef) {
     duedate: document.getElementById("c-duedate").value || null,
     labels: labels.length ? labels : null,
     status: status || null,
+    epicColor: category === "Epic" ? epicColor : null,
     assigneeId: resolveAssignee("c-assignee"),
     custom: Object.keys(custom).length ? custom : null,
   };
@@ -657,8 +667,64 @@ async function runOnHoldScan(opts = {}) {
   if (r.errors.length) console.warn("On-hold cancel errors:", r.errors);
 }
 
+// ---------- manager update report ----------
+async function openReport() {
+  openModal(`<h3>Manager update</h3><p class="muted">Building this month's report…</p>`);
+  let data;
+  try {
+    data = await api("/api/report/data");
+  } catch (e) {
+    openModal(`<h3 class="stage-error">Report failed</h3><p>${e.message}</p>
+      <div class="modal-actions"><button onclick="closeModalBtn()">Close</button></div>`);
+    return;
+  }
+
+  let rowsHtml = "";
+  let count = 0;
+  data.epics.forEach((ep) => {
+    const span = ep.stories.reduce((n, st) => n + st.subs.length, 0);
+    let epShown = false;
+    ep.stories.forEach((st) => {
+      st.subs.forEach((s, i) => {
+        count++;
+        rowsHtml += `<tr>
+          ${!epShown ? `<td rowspan="${span}" class="rpt-epic"><b>${ep.key}: ${escapeHtml(ep.summary)}</b>${ep.description ? `<div class="muted">${escapeHtml(ep.description)}</div>` : ""}</td>` : ""}
+          <td>${i === 0 ? `<b>${st.key}: ${escapeHtml(st.summary)}</b> <span class="muted">(${st.progress})</span><br>` : ""}↳ ${s.key}: ${escapeHtml(s.summary)}</td>
+          <td>${s.start}</td><td>${s.end}</td>
+          <td><span class="rag" style="background:${s.ragColor}">${s.rag}</span></td>
+          <td>${escapeHtml(s.who)}</td>
+        </tr>`;
+        epShown = true;
+      });
+    });
+  });
+
+  const body = count ? `
+    <table class="rpt-table">
+      <thead><tr><th>Epic</th><th>Story / Sub-task</th><th>Start</th><th>Target end</th><th>Status</th><th>Responsible</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>` : `<p class="muted">No sub-tasks with a Target Completion Date in ${data.month}.</p>`;
+
+  openModal(`
+    <h3>Manager update — ${data.month}</h3>
+    <p class="muted">${count} sub-task(s) due this month, across ${data.epics.length} epic(s). Review below, then download the slide.</p>
+    <div class="rpt-wrap">${body}</div>
+    <div class="modal-actions">
+      <button onclick="closeModalBtn()">Close</button>
+      <button class="success" onclick="downloadReport(${data.year}, ${data.monthNum})">⬇ Download PowerPoint</button>
+    </div>`);
+}
+
+function downloadReport(year, month) {
+  // Content-Disposition on the endpoint triggers the file download.
+  window.location.href = `/api/report/pptx?year=${year}&month=${month}`;
+  toast("Downloading PowerPoint…", "success");
+}
+window.downloadReport = downloadReport;
+
 // ---------- wire up ----------
 $("#btn-new").onclick = newItemFlow;
+$("#btn-report").onclick = openReport;
 $("#btn-refresh").onclick = async () => {
   await loadTree(true);
   if (META.autoCancelOnHold) runOnHoldScan();

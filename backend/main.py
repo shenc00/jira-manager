@@ -5,18 +5,20 @@ changes can be overlaid without re-hitting Jira on every render.
 """
 from __future__ import annotations
 
+import io
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import config
 from . import fields as fields_module
+from . import report as report_module
 from .jira_client import JiraError, from_config
 from .staging import StagingStore
 
@@ -67,6 +69,7 @@ class CreateBody(BaseModel):
     status: str | None = None
     comment: str | None = None
     custom: dict[str, Any] | None = None
+    epicColor: str | None = None
 
 
 # --- overlay of staged changes onto the cached tree ------------------------
@@ -322,6 +325,47 @@ def scan_onhold(apply: bool | None = None, force: bool = False):
     if report["cancelled"]:
         _cache["tree"] = None  # cancelled items leave the active tree
     return report
+
+
+def _report_period(year: int | None, month: int | None) -> tuple[int, int]:
+    today = date.today()
+    return (year or today.year), (month or today.month)
+
+
+@app.get("/api/report/data")
+def report_data(year: int | None = None, month: int | None = None):
+    c = client()
+    y, m = _report_period(year, month)
+    try:
+        epics = report_module.gather(c, y, m)
+    except JiraError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    # strip the internal colour object before returning JSON
+    for ep in epics:
+        for st in ep["stories"]:
+            for s in st["subs"]:
+                s.pop("_color", None)
+    return {"month": report_module.month_label(y, m), "year": y,
+            "monthNum": m, "epics": epics}
+
+
+@app.get("/api/report/pptx")
+def report_pptx(year: int | None = None, month: int | None = None):
+    c = client()
+    y, m = _report_period(year, month)
+    try:
+        epics = report_module.gather(c, y, m)
+        data = report_module.build_pptx(epics, y, m)
+    except JiraError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    fname = f"manager-update-{y}-{m:02d}.pptx"
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        ),
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @app.post("/api/push")

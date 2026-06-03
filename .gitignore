@@ -2,8 +2,8 @@
 .env
 
 # Local staging + cached data (do not commit your Jira data)
-data/*.json
-data/*.log
+# The data/ folder is recreated at runtime; never commit its contents.
+data/
 
 # Python
 __pycache__/

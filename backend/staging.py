@@ -123,7 +123,7 @@ class StagingStore:
         that succeed are removed from staging; failures remain so they can be
         retried or removed.
         """
-        report = {"created": [], "updated": [], "errors": []}
+        report = {"created": [], "updated": [], "errors": [], "warnings": []}
         temp_to_real: dict[str, str] = {}
         remaining: list[dict] = []
 
@@ -156,6 +156,18 @@ class StagingStore:
                          "summary": data.get("summary", "")}
                     )
                     self._apply_post_create(client, new_key, data)
+                    # Best-effort epic colour: the colour field often isn't on
+                    # the Epic screen, so a failure must not fail the create.
+                    if data.get("epicColor"):
+                        try:
+                            client.update_issue(
+                                new_key, {"customfield_10017": data["epicColor"]})
+                        except Exception as exc:  # noqa: BLE001
+                            report["warnings"].append({
+                                "key": new_key,
+                                "warning": f"could not set colour "
+                                           f"'{data['epicColor']}': {exc}",
+                            })
                     progress = True
                 except Exception as exc:  # noqa: BLE001 - report, keep going
                     op["error"] = str(exc)

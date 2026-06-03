@@ -1,0 +1,18 @@
+# Secrets / local config
+.env
+
+# Local staging + cached data (do not commit your Jira data)
+data/*.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

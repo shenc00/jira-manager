@@ -68,6 +68,10 @@ def adf_to_text(node: Any) -> str:
     if isinstance(node, dict):
         if node.get("type") == "text":
             return node.get("text", "")
+        if node.get("type") == "mention":
+            return (node.get("attrs") or {}).get("text", "")
+        if node.get("type") == "emoji":
+            return (node.get("attrs") or {}).get("text", "")
         parts = [adf_to_text(c) for c in node.get("content", [])]
         sep = "\n" if node.get("type") in ("paragraph", "doc") else ""
         return sep.join(p for p in parts if p is not None)
@@ -364,6 +368,23 @@ class JiraClient:
         if not types:
             return set()
         return set(types[0].get("fields", {}).keys())
+
+    def latest_comment(self, key: str) -> dict | None:
+        """Most recent comment on an issue, or None."""
+        try:
+            data = self._request(
+                "GET", f"/issue/{key}/comment?maxResults=1&orderBy=-created")
+        except JiraError:
+            return None
+        comments = data.get("comments", [])
+        if not comments:
+            return None
+        c = comments[0]
+        return {
+            "author": (c.get("author") or {}).get("displayName", ""),
+            "date": (c.get("created") or "")[:10],
+            "text": adf_to_text(c.get("body")),
+        }
 
     def get_transitions(self, key: str) -> list[dict]:
         data = self._request("GET", f"/issue/{key}/transitions")

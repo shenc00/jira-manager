@@ -54,6 +54,12 @@ def _one_line(text: str, limit: int = 160) -> str:
     return line[:limit] + ("…" if len(line) > limit else "")
 
 
+def _flatten(text: str, limit: int = 220) -> str:
+    """Collapse all whitespace/newlines to single spaces and truncate."""
+    t = " ".join((text or "").split())
+    return t[:limit] + ("…" if len(t) > limit else "")
+
+
 def _in_month(value, year: int, month: int) -> bool:
     d = fields_mod.to_date(value)
     return bool(d and d.year == year and d.month == month)
@@ -106,6 +112,12 @@ def gather(client: JiraClient, year: int, month: int,
                 cat = ((sf.get("status") or {}).get("statusCategory") or {}).get("key", "")
                 end = sf.get(tgt)
                 label, colour = rag_status(status_name, cat, end, today)
+                comment = client.latest_comment(s["key"])
+                if comment and comment["text"].strip():
+                    update = _flatten(comment["text"])
+                    update_meta = f'{comment["author"]}, {comment["date"]}'
+                else:
+                    update, update_meta = "", ""
                 rows.append({
                     "key": s["key"],
                     "summary": sf.get("summary", ""),
@@ -116,6 +128,8 @@ def gather(client: JiraClient, year: int, month: int,
                     "ragColor": "#%02X%02X%02X" % (colour[0], colour[1], colour[2]),
                     "_color": colour,
                     "who": (sf.get("assignee") or {}).get("displayName", "Unassigned"),
+                    "update": update,
+                    "updateMeta": update_meta,
                 })
             stories_out.append({
                 "key": ck,
@@ -140,8 +154,9 @@ def month_label(year: int, month: int) -> str:
 
 # --- PowerPoint rendering --------------------------------------------------
 
-COLS = ["Epic", "Story / Sub-task", "Start date", "Target end", "Status", "Responsible"]
-COL_WIDTHS = [2.6, 4.3, 1.2, 1.2, 1.3, 2.0]  # inches (total ~12.6 on 13.33 slide)
+COLS = ["Epic", "Story / Sub-task", "Start", "Target end", "Status",
+        "Responsible", "Latest update"]
+COL_WIDTHS = [1.9, 2.8, 0.85, 0.95, 0.95, 1.35, 3.4]  # ~12.2 on 13.33 slide
 
 
 def _set_cell(cell, runs, *, bold=False, size=9, color=DARK, fill=None,
@@ -244,11 +259,17 @@ def build_pptx(epics: list[dict], year: int, month: int,
                 story_lines.append((st["description"], False))
         story_lines.append((f'↳ {sub["key"]}: {sub["summary"]}', False))
         _set_cell(table.cell(r, 1), story_lines, size=9)
-        _set_cell(table.cell(r, 2), sub["start"], size=9, align=PP_ALIGN.CENTER)
-        _set_cell(table.cell(r, 3), sub["end"], size=9, align=PP_ALIGN.CENTER)
-        _set_cell(table.cell(r, 4), [(sub["rag"], True)], size=9, color=WHITE,
+        _set_cell(table.cell(r, 2), sub["start"], size=8, align=PP_ALIGN.CENTER)
+        _set_cell(table.cell(r, 3), sub["end"], size=8, align=PP_ALIGN.CENTER)
+        _set_cell(table.cell(r, 4), [(sub["rag"], True)], size=8, color=WHITE,
                   fill=sub["_color"], align=PP_ALIGN.CENTER)
-        _set_cell(table.cell(r, 5), sub["who"], size=9)
+        _set_cell(table.cell(r, 5), sub["who"], size=8)
+        if sub.get("update"):
+            _set_cell(table.cell(r, 6),
+                      [(sub["update"], False),
+                       (f'— {sub["updateMeta"]}', False)], size=8, color=DARK)
+        else:
+            _set_cell(table.cell(r, 6), [("No comments", False)], size=8, color=GREY)
 
     # Merge epic cells per group
     r = 1

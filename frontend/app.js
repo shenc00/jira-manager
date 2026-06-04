@@ -718,12 +718,16 @@ async function openReport() {
             + (st.description ? `<div class="muted rpt-desc">${escapeHtml(st.description)}</div>` : "")
             + `<br>`
           : "";
+        const updateCell = s.update
+          ? `${escapeHtml(s.update)}<div class="muted rpt-meta">— ${escapeHtml(s.updateMeta)}</div>`
+          : `<span class="muted">No comments</span>`;
         rowsHtml += `<tr>
           ${!epShown ? `<td rowspan="${span}" class="rpt-epic"><b>${ep.key}: ${escapeHtml(ep.summary)}</b>${ep.description ? `<div class="muted">${escapeHtml(ep.description)}</div>` : ""}</td>` : ""}
           <td>${storyHeader}↳ ${s.key}: ${escapeHtml(s.summary)}</td>
           <td>${s.start}</td><td>${s.end}</td>
           <td><span class="rag" style="background:${s.ragColor}">${s.rag}</span></td>
           <td>${escapeHtml(s.who)}</td>
+          <td class="rpt-update">${updateCell}</td>
         </tr>`;
         epShown = true;
       });
@@ -732,7 +736,7 @@ async function openReport() {
 
   const body = count ? `
     <table class="rpt-table">
-      <thead><tr><th>Epic</th><th>Story / Sub-task</th><th>Start</th><th>Target end</th><th>Status</th><th>Responsible</th></tr></thead>
+      <thead><tr><th>Epic</th><th>Story / Sub-task</th><th>Start</th><th>Target end</th><th>Status</th><th>Responsible</th><th>Latest update</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>` : `<p class="muted">No sub-tasks with a Target Completion Date in ${data.month}.</p>`;
 

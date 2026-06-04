@@ -100,7 +100,7 @@ libraries in case anything changed. That's the whole update — no re-downloadin
 ### Option B — Install from a downloaded ZIP (no Git)
 
 1. **Download the ZIP** from SharePoint:
-   [jira-manager.zip](https://bd1.sharepoint.com/:u:/r/sites/GSCTransformationGlobalSupplyChain/Shared%20Documents/General/DOMAINS%20%26%20PROJECTS/DELIVER%20Domain/Github/jira-manager.zip?csf=1&web=1&e=5uJ6CR)
+   [jira-manager.zip](https://bd1.sharepoint.com/:u:/r/sites/GSCTransformationGlobalSupplyChain/Shared%20Documents/General/DOMAINS%20%26%20PROJECTS/DELIVER%20Domain/Github/jira-manager.zip?csf=1&web=1&e=GP1Zkl)
 2. In File Explorer, **right-click the downloaded `jira-manager.zip` → Extract
    All…** and choose a location (e.g. your **Documents** folder). You'll get a
    `jira-manager` folder.

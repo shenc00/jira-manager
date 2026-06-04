@@ -126,8 +126,18 @@ The app needs **Python 3.10 or newer**. Many work laptops don't have it.
    python --version
    ```
    If it prints `Python 3.10.x` (or higher), **skip to the next section**.
-2. If you get an error, or the **Microsoft Store** pops open, install Python
-   properly:
+2. If you get an error, or the **Microsoft Store** pops open, install Python one
+   of these two ways:
+
+   **Easiest — straight from PowerShell (no website).** On Windows 10/11 you can
+   install Python 3.13 by copy-pasting this one line:
+   ```powershell
+   winget install -e --id Python.Python.3.13
+   ```
+   Then **close and reopen PowerShell** and check `python --version`.
+   *(If `winget` isn't recognised, use the website method below.)*
+
+   **Or from the website.**
    - Go to https://www.python.org/downloads/ and download the latest Windows
      installer (3.10+).
    - Run it. On the **first screen, tick the box “Add python.exe to PATH”**
@@ -216,20 +226,36 @@ Your browser opens automatically.
 - **First-run error?** If the very first page shows **“Internal Server Error”**
   or a certificate error, it almost always means the **`truststore`** library
   isn't installed yet — that library lets the app work through the corporate
-  network and powers the auto-port redirect. Fix it by making sure you ran the
-  dependency step:
+  network and powers the auto-port redirect. Install it by copy-pasting this one
+  line into PowerShell, then **refresh the page**:
   ```powershell
-  pip install -r requirements.txt
+  pip install truststore
   ```
-  (or just `pip install truststore`), then **refresh the page**. If the page
-  ever can't reach the server, a banner appears that finds the right port and
-  gives you a link to click.
+  (Running `pip install -r requirements.txt` installs it too.) If the page ever
+  can't reach the server, a banner appears that finds the right port and gives
+  you a link to click.
 - **“python is not recognised”?** Python isn't installed or wasn't added to
   PATH — go back to **Install Python** above.
 
 Keep the PowerShell window open while you use the app; closing it stops the
 server. To start again next time: open PowerShell, `cd` to the folder,
 `.\.venv\Scripts\Activate.ps1`, then `python run.py`.
+
+#### Can I just bookmark the address?
+
+**Yes.** Bookmark the address shown in your browser (e.g.
+`http://127.0.0.1:8123`). On your machine the port is normally the **same every
+time**, so the bookmark keeps working.
+
+Two things to remember:
+- **Start the app first.** The page only loads while `python run.py` is running.
+  So each time you log on: run `python run.py` (it also re-opens the correct page
+  for you automatically), then your bookmark works too.
+- **If the port ever changes** (rare — only if that port becomes blocked/busy),
+  `run.py` opens the new address for you. If you open an old bookmark and the
+  page loads but can't reach the server, the app **auto-detects the working
+  port** and shows a banner with a link to the right address — click it and
+  update your bookmark to the new one.
 
 ---
 

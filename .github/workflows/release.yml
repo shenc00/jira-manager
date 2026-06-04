@@ -1,0 +1,56 @@
+name: Release
+
+# Builds a clean, shareable jira-manager.zip automatically whenever you push a
+# version tag (e.g. `git tag v1.2.0 && git push origin v1.2.0`) and attaches it
+# to a GitHub Release. The zip is built with `git archive`, so .env and data/
+# are never included.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build clean release zip
+        run: git archive --format=zip --prefix=jira-manager/ -o jira-manager.zip HEAD
+
+      - name: Attach zip to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: jira-manager.zip
+          generate_release_notes: true
+
+      # --- Optional: also push the zip to SharePoint via Microsoft Graph -------
+      # Requires an Azure AD app registration (admin) and these repository
+      # secrets: SP_TENANT_ID, SP_CLIENT_ID, SP_CLIENT_SECRET, SP_DRIVE_ID,
+      # SP_ITEM_PATH (e.g. "DELIVER Domain/Github/jira-manager.zip").
+      # Remove the `if:` guard once the secrets are set.
+      - name: Upload to SharePoint (optional)
+        if: ${{ env.SP_CLIENT_ID != '' }}
+        env:
+          SP_TENANT_ID: ${{ secrets.SP_TENANT_ID }}
+          SP_CLIENT_ID: ${{ secrets.SP_CLIENT_ID }}
+          SP_CLIENT_SECRET: ${{ secrets.SP_CLIENT_SECRET }}
+          SP_DRIVE_ID: ${{ secrets.SP_DRIVE_ID }}
+          SP_ITEM_PATH: ${{ secrets.SP_ITEM_PATH }}
+        run: |
+          set -euo pipefail
+          TOKEN=$(curl -s -X POST \
+            "https://login.microsoftonline.com/${SP_TENANT_ID}/oauth2/v2.0/token" \
+            -d "client_id=${SP_CLIENT_ID}" \
+            -d "client_secret=${SP_CLIENT_SECRET}" \
+            -d "scope=https://graph.microsoft.com/.default" \
+            -d "grant_type=client_credentials" | python -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+          curl -s -X PUT \
+            "https://graph.microsoft.com/v1.0/drives/${SP_DRIVE_ID}/root:/${SP_ITEM_PATH}:/content" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Content-Type: application/zip" \
+            --data-binary @jira-manager.zip

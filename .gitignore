@@ -5,6 +5,10 @@
 # The data/ folder is recreated at runtime; never commit its contents.
 data/
 
+# Built release artifacts
+dist/
+*.zip
+
 # Python
 __pycache__/
 *.pyc
@@ -17,3 +21,5 @@ env/
 .idea/
 .DS_Store
 Thumbs.db
+
+.claude/settings.local.json

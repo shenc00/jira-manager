@@ -54,34 +54,182 @@ locally and only written to Jira when you review and push**.
 
 ## Setup
 
-1. **Install Python 3.10+** and the dependencies:
+There are **two ways to get the app**. Do **one** of them, then follow the
+shared steps (Install Python → Install dependencies → Configure → Run).
 
+> 🟢 **Option A (Git) is recommended** — updating later is a single command.
+
+### Option A — Install with Git (recommended)
+
+You do **not** need to know Git. Just follow these steps.
+
+1. **Install Git for Windows** (one time):
+   - Go to https://git-scm.com/download/win — the download starts automatically.
+   - Run the installer and click **Next** through every screen (the defaults are
+     fine), then **Install**.
+   - To check it worked: open **PowerShell** (Start menu → type `PowerShell` →
+     Enter) and type `git --version`. You should see a version number.
+
+2. **Pick where to keep the app and download it.** In PowerShell, type these two
+   lines (press Enter after each):
    ```powershell
-   cd "..\jira-manager"
-   python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   pip install -r requirements.txt
+   cd "$HOME\Documents"
+   git clone https://github.com/shenc00/jira-manager.git
+   ```
+   This creates a folder called **`jira-manager`** inside your Documents.
+
+3. **Go into the folder:**
+   ```powershell
+   cd jira-manager
    ```
 
-2. **Get a Jira API token**: https://id.atlassian.com/manage-profile/security/api-tokens
-   → *Create API token* → copy it (you only see it once).
+4. Continue with **Install Python**, **Install dependencies**, and **Configure**
+   below.
 
-3. **Configure**: copy `.env.example` to `.env` and fill in the first three
-   values (see the full reference below):
+**🔄 Updating later (each time the app is improved):** open PowerShell, go to the
+folder, and pull the latest version:
+```powershell
+cd "$HOME\Documents\jira-manager"
+git pull
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+`git pull` downloads all the newest features; the last two lines refresh the
+libraries in case anything changed. That's the whole update — no re-downloading.
 
+### Option B — Install from a downloaded ZIP (no Git)
+
+1. **Download the ZIP** from SharePoint:
+   [jira-manager.zip](https://bd1.sharepoint.com/:u:/r/sites/GSCTransformationGlobalSupplyChain/Shared%20Documents/General/DOMAINS%20%26%20PROJECTS/DELIVER%20Domain/Github/jira-manager.zip?csf=1&web=1&e=5uJ6CR)
+2. In File Explorer, **right-click the downloaded `jira-manager.zip` → Extract
+   All…** and choose a location (e.g. your **Documents** folder). You'll get a
+   `jira-manager` folder.
+3. Open **PowerShell** and go into that folder, e.g.:
+   ```powershell
+   cd "$HOME\Documents\jira-manager"
+   ```
+4. Continue with **Install Python**, **Install dependencies**, and **Configure**.
+
+**🔄 Updating later:** download the new ZIP from the same link and extract it
+again (replacing the old folder). Your `.env` file (below) is separate — keep a
+copy of it, or just re-enter your three values after updating. *(This manual
+hassle is why Option A is recommended.)*
+
+---
+
+### Install Python (both options)
+
+The app needs **Python 3.10 or newer**. Many work laptops don't have it.
+
+1. Check first — in PowerShell type:
+   ```powershell
+   python --version
+   ```
+   If it prints `Python 3.10.x` (or higher), **skip to the next section**.
+2. If you get an error, or the **Microsoft Store** pops open, install Python
+   properly:
+   - Go to https://www.python.org/downloads/ and download the latest Windows
+     installer (3.10+).
+   - Run it. On the **first screen, tick the box “Add python.exe to PATH”**
+     (important!), then click **Install Now**.
+   - **Close and reopen PowerShell**, then re-check with `python --version`.
+
+### Install dependencies (both options)
+
+All of these are typed in **Windows PowerShell** (or a similar terminal). First,
+make sure you are **in the `jira-manager` folder** — that's the folder created by
+Option A or B above. (`cd "..\jira-manager"` just means "change into the
+jira-manager folder"; use the real path, e.g. `cd "$HOME\Documents\jira-manager"`.)
+
+Then **copy-and-paste these three lines exactly**, one at a time, pressing Enter
+after each:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+- Line 1 creates a private workspace for the app's libraries.
+- Line 2 turns it on — you'll see **`(.venv)`** appear at the start of the line.
+- Line 3 installs everything the app needs, **including the `truststore`
+  library** that fixes the first-run security/certificate error and powers the
+  automatic-port feature (see *Run the app* below).
+
+> If line 2 fails with *“running scripts is disabled on this system”*, run this
+> once, then re-run line 2:
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+> ```
+
+### Configure your Jira login (`.env` file)
+
+1. **Get a Jira API token:** https://id.atlassian.com/manage-profile/security/api-tokens
+   → **Create API token** → copy it (you only see it once).
+2. In the `jira-manager` folder there's a template file named **`.env.example`**.
+   **Make a copy of it and rename the copy to `.env`** — exactly `.env`, with
+   nothing before the dot and no `.example` at the end.
+   - Easiest way (PowerShell):
+     ```powershell
+     Copy-Item .env.example .env
+     ```
+   - Or in File Explorer: right-click `.env.example` → **Copy**, paste it in the
+     same folder, then rename the copy to `.env`. *(If you can't see the
+     `.example` ending, turn on **View → File name extensions** in File
+     Explorer.)*
+3. **Open `.env` in Notepad** (right-click `.env` → **Open with → Notepad**) and
+   change just these three lines, then **save**:
    ```
    JIRA_SITE=https://bd-jira.atlassian.net
-   JIRA_EMAIL=you@bd.com
-   JIRA_API_TOKEN=<the token you copied>
+   JIRA_EMAIL=your.name@bd.com
+   JIRA_API_TOKEN=<paste the token you copied>
    ```
+   (Leave the other lines as they are.)
 
-4. **Run**:
+> #### 🔐 Is my Jira token safe? Will sharing the app expose it?
+> **No — your token stays only on your machine.** The `.env` file that holds it
+> is **never** part of the shared app:
+> - The Git repository and the SharePoint ZIP contain only **`.env.example`** —
+>   a blank template with placeholder text, no real token.
+> - `.env` is listed in `.gitignore`, so Git refuses to upload it, and the ZIP
+>   is built with `git archive` (committed files only), so it **cannot** contain
+>   anyone's `.env`.
+> - **Every person makes their own token and their own `.env`** locally. Never
+>   email or message your token. If it's ever exposed, revoke it at the token
+>   page and create a new one.
 
-   ```powershell
-   python run.py
-   ```
+### Run the app
 
-   Your browser opens at **http://127.0.0.1:8123**.
+With **`(.venv)`** showing in PowerShell (if not, re-run
+`.\.venv\Scripts\Activate.ps1`), type:
+
+```powershell
+python run.py
+```
+
+Your browser opens automatically.
+
+- **The address is specific to *your* machine.** It's usually
+  **http://127.0.0.1:8123**, but if that port is blocked or busy on your PC the
+  app **automatically finds a working one** (e.g. 8200) and opens the correct
+  page. The exact address is also printed in PowerShell.
+- **First-run error?** If the very first page shows **“Internal Server Error”**
+  or a certificate error, it almost always means the **`truststore`** library
+  isn't installed yet — that library lets the app work through the corporate
+  network and powers the auto-port redirect. Fix it by making sure you ran the
+  dependency step:
+  ```powershell
+  pip install -r requirements.txt
+  ```
+  (or just `pip install truststore`), then **refresh the page**. If the page
+  ever can't reach the server, a banner appears that finds the right port and
+  gives you a link to click.
+- **“python is not recognised”?** Python isn't installed or wasn't added to
+  PATH — go back to **Install Python** above.
+
+Keep the PowerShell window open while you use the app; closing it stops the
+server. To start again next time: open PowerShell, `cd` to the folder,
+`.\.venv\Scripts\Activate.ps1`, then `python run.py`.
 
 ---
 
@@ -249,6 +397,56 @@ Each user only ever sees and does what their Jira permissions allow.
 
 ---
 
+## Publishing updates (for the maintainer)
+
+How a new version reaches everyone:
+
+- **Git users** (Option A) get updates by running `git pull` — nothing for you
+  to do beyond pushing to GitHub.
+- **ZIP users** (Option B) need a refreshed `jira-manager.zip` on SharePoint.
+
+The zip is always built with `git archive`, so it contains **only committed
+code** — never your `.env`, `data/`, `.git`, or `.venv`.
+
+### Automated: GitHub Release on every version tag
+
+A GitHub Action (`.github/workflows/release.yml`) builds the zip and attaches it
+to a GitHub Release automatically whenever you push a version tag:
+
+```powershell
+git tag v1.3.0
+git push origin v1.3.0
+```
+
+The zip then appears under the repo's **Releases** page — a stable download link
+you can also share.
+
+### Refreshing the SharePoint zip
+
+Pushing to that exact SharePoint file needs **one** of these (a third party
+can't write there without access):
+
+- **Simplest — sync once, then one command.** In the browser, open the SharePoint
+  *…/DELIVER Domain/Github* folder and click **Sync** (or *Add shortcut to
+  OneDrive*). It then appears under `C:\Users\<you>\BD\…\Github\`. After that,
+  publish an update with:
+  ```powershell
+  .\build-release.ps1 -Destination "C:\Users\<you>\BD\...\Github\jira-manager.zip"
+  ```
+  This rebuilds the clean zip and drops it into the synced folder; OneDrive
+  replaces the shared file automatically.
+- **Fully automated in CI (needs IT/admin).** The release workflow has an
+  optional **“Upload to SharePoint”** step using the Microsoft Graph API. It
+  activates once an admin creates an Azure AD app registration and adds these
+  repository **secrets**: `SP_TENANT_ID`, `SP_CLIENT_ID`, `SP_CLIENT_SECRET`,
+  `SP_DRIVE_ID`, `SP_ITEM_PATH`. Then every tagged release also replaces the
+  SharePoint zip.
+- **Manual fallback.** Run `.\build-release.ps1` (no `-Destination`) and upload
+  the resulting `dist\jira-manager.zip` to SharePoint through the browser,
+  choosing **Replace** when prompted.
+
+---
+
 ## Project layout
 
 ```
@@ -265,6 +463,10 @@ jira-manager/
 │   ├── style.css
 │   └── app.js          # tree, edit panel, create wizard, report, review/push
 ├── data/               # staging.json, auto_cancel.log (git-ignored)
+├── dist/               # built jira-manager.zip (git-ignored)
+├── .github/workflows/
+│   └── release.yml     # auto-builds the zip + GitHub Release on a version tag
+├── build-release.ps1   # build a clean zip (and optionally publish to SharePoint)
 ├── run.py              # launcher (python run.py [port])
 └── requirements.txt
 ```

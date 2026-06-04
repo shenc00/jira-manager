@@ -14,6 +14,15 @@ from requests.auth import HTTPBasicAuth
 
 from . import config, fields as fields_mod
 
+# Trust the OS certificate store so corporate HTTPS-inspection proxies (whose
+# root CA lives in the Windows store, not in certifi) are accepted. Must run
+# before any TLS connection is made.
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:  # noqa: BLE001 - truststore is best-effort
+    pass
+
 
 def _parse_dt(value: str | None) -> datetime | None:
     """Parse a Jira timestamp (e.g. 2025-02-20T10:30:00.000+0000)."""
@@ -78,6 +87,17 @@ class JiraClient:
         self.session.headers.update(
             {"Accept": "application/json", "Content-Type": "application/json"}
         )
+        # TLS verification: an explicit CA bundle wins; otherwise rely on the
+        # injected OS trust store unless verification is explicitly disabled.
+        if config.CA_BUNDLE:
+            self.session.verify = config.CA_BUNDLE
+        elif not config.VERIFY_SSL:
+            self.session.verify = False
+            try:
+                import urllib3
+                urllib3.disable_warnings()
+            except Exception:  # noqa: BLE001
+                pass
 
     # -- low level ----------------------------------------------------------
 

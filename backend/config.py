@@ -46,6 +46,14 @@ ONHOLD_MONTHS = int(os.environ.get("JIRA_ONHOLD_MONTHS", "6") or "6")
 # scan, pause and require explicit confirmation instead of mass-cancelling.
 AUTO_CANCEL_CAP = int(os.environ.get("JIRA_AUTO_CANCEL_CAP", "25") or "25")
 
+# --- TLS / corporate proxy -------------------------------------------------
+# Corporate networks that intercept HTTPS present a self-signed root CA. The
+# app injects the OS trust store (truststore) so that CA is trusted. These are
+# fallbacks: point JIRA_CA_BUNDLE at a .pem, or set JIRA_VERIFY_SSL=false to
+# skip verification entirely (last resort).
+VERIFY_SSL = _as_bool(os.environ.get("JIRA_VERIFY_SSL", "true"), default=True)
+CA_BUNDLE = os.environ.get("JIRA_CA_BUNDLE", "").strip()
+
 # Where staged changes and the cached tree are persisted.
 DATA_DIR = ROOT_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)

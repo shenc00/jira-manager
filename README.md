@@ -237,9 +237,18 @@ Your browser opens automatically.
 - **“python is not recognised”?** Python isn't installed or wasn't added to
   PATH — go back to **Install Python** above.
 
-Keep the PowerShell window open while you use the app; closing it stops the
-server. To start again next time: open PowerShell, `cd` to the folder,
-`.\.venv\Scripts\Activate.ps1`, then `python run.py`.
+> [!IMPORTANT]
+> ### ⚠️ Keep PowerShell open — it **is** the app
+> **The web page only works while `python run.py` is running in PowerShell.**
+> If you **close the PowerShell window, the server stops and the page goes
+> blank / stops loading.** Minimise it instead of closing it.
+>
+> **To start it again next time you log on:** open PowerShell, `cd` to your
+> `jira-manager` folder, then run:
+> ```powershell
+> .\.venv\Scripts\Activate.ps1
+> python run.py
+> ```
 
 #### Can I just bookmark the address?
 

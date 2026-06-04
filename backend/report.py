@@ -209,8 +209,8 @@ def month_label(year: int, month: int) -> str:
 # --- PowerPoint rendering --------------------------------------------------
 
 COLS = ["Epic", "Story / Sub-task", "Start", "Target end", "Status",
-        "Responsible", "Latest update"]
-COL_WIDTHS = [1.9, 2.8, 0.85, 0.95, 0.95, 1.35, 3.4]  # ~12.2 on 13.33 slide
+        "Progress", "Responsible", "Latest update"]
+COL_WIDTHS = [1.8, 2.6, 0.8, 0.9, 0.9, 1.0, 1.2, 3.0]  # ~12.2 on 13.33 slide
 
 
 def _set_cell(cell, runs, *, bold=False, size=9, color=DARK, fill=None,
@@ -317,13 +317,15 @@ def build_pptx(epics: list[dict], year: int, month: int,
         _set_cell(table.cell(r, 3), sub["end"], size=8, align=PP_ALIGN.CENTER)
         _set_cell(table.cell(r, 4), [(sub["rag"], True)], size=8, color=WHITE,
                   fill=sub["_color"], align=PP_ALIGN.CENTER)
-        _set_cell(table.cell(r, 5), sub["who"], size=8)
+        _set_cell(table.cell(r, 5), sub.get("status", ""), size=8,
+                  align=PP_ALIGN.CENTER)
+        _set_cell(table.cell(r, 6), sub["who"], size=8)
         if sub.get("update"):
-            _set_cell(table.cell(r, 6),
+            _set_cell(table.cell(r, 7),
                       [(sub["update"], False),
                        (f'— {sub["updateMeta"]}', False)], size=8, color=DARK)
         else:
-            _set_cell(table.cell(r, 6), [("No comments", False)], size=8, color=GREY)
+            _set_cell(table.cell(r, 7), [("No comments", False)], size=8, color=GREY)
 
     # Merge epic cells per group
     r = 1

@@ -788,17 +788,25 @@ async function runOnHoldScan(opts = {}) {
   if (r.errors.length) console.warn("On-hold cancel errors:", r.errors);
 }
 
-// ---------- manager update report ----------
-async function openReport() {
-  openModal(`<h3>Monthly Report</h3><p class="muted">Building this month's report…</p>`);
+// ---------- monthly report ----------
+let _reportYear = null, _reportMonth = null;   // currently displayed period
+
+async function openReport(year, month) {
+  openModal(`<h3>Monthly Report</h3><p class="muted">Building report…</p>`);
+  const params = new URLSearchParams();
+  if (year) params.set("year", year);
+  if (month) params.set("month", month);
+  if (viewedEmail) params.set("email", viewedEmail);
   let data;
   try {
-    data = await api("/api/report/data" + (viewedEmail ? "?email=" + encodeURIComponent(viewedEmail) : ""));
+    data = await api("/api/report/data" + (params.toString() ? "?" + params : ""));
   } catch (e) {
     openModal(`<h3 class="stage-error">Report failed</h3><p>${e.message}</p>
       <div class="modal-actions"><button onclick="closeModalBtn()">Close</button></div>`);
     return;
   }
+  _reportYear = data.year;
+  _reportMonth = data.monthNum;
 
   let rowsHtml = "";
   let count = 0;
@@ -821,6 +829,7 @@ async function openReport() {
           <td>${storyHeader}↳ ${s.key}: ${escapeHtml(s.summary)}</td>
           <td>${s.start}</td><td>${s.end}</td>
           <td><span class="rag" style="background:${s.ragColor}">${s.rag}</span></td>
+          <td>${escapeHtml(s.status || "")}</td>
           <td>${escapeHtml(s.who)}</td>
           <td class="rpt-update">${updateCell}</td>
         </tr>`;
@@ -831,18 +840,40 @@ async function openReport() {
 
   const body = count ? `
     <table class="rpt-table">
-      <thead><tr><th>Epic</th><th>Story / Sub-task</th><th>Start</th><th>Target end</th><th>Status</th><th>Responsible</th><th>Latest update</th></tr></thead>
+      <thead><tr><th>Epic</th><th>Story / Sub-task</th><th>Start</th><th>Target end</th><th>Status</th><th>Progress</th><th>Responsible</th><th>Latest update</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>` : `<p class="muted">No sub-tasks with a Target Completion Date in ${data.month}.</p>`;
 
+  const monthValue = `${data.year}-${String(data.monthNum).padStart(2, "0")}`;
   openModal(`
     <h3>Monthly Report — ${data.month}</h3>
-    <p class="muted">For <b>${escapeHtml(data.owner || "me")}</b> · ${count} sub-task(s) due this month, across ${data.epics.length} epic(s). Review below, then download the slide.</p>
+    <div class="rpt-nav">
+      <button id="rpt-prev" title="Previous month">◀</button>
+      <input type="month" id="rpt-month" value="${monthValue}">
+      <button id="rpt-next" title="Next month">▶</button>
+      <button id="rpt-this">This month</button>
+    </div>
+    <p class="muted">For <b>${escapeHtml(data.owner || "me")}</b> · ${count} sub-task(s) with a target end in ${data.month}, across ${data.epics.length} epic(s).</p>
     <div class="rpt-wrap">${body}</div>
     <div class="modal-actions">
       <button onclick="closeModalBtn()">Close</button>
       <button class="success" onclick="downloadReport(${data.year}, ${data.monthNum})">⬇ Download PowerPoint</button>
     </div>`);
+
+  // wire month navigation
+  const shift = (delta) => {
+    let y = data.year, m = data.monthNum + delta;
+    if (m < 1) { m = 12; y -= 1; }
+    if (m > 12) { m = 1; y += 1; }
+    openReport(y, m);
+  };
+  $("#rpt-prev").onclick = () => shift(-1);
+  $("#rpt-next").onclick = () => shift(1);
+  $("#rpt-this").onclick = () => openReport();
+  $("#rpt-month").onchange = (e) => {
+    const [y, m] = e.target.value.split("-").map(Number);
+    if (y && m) openReport(y, m);
+  };
 }
 
 function downloadReport(year, month) {
@@ -855,7 +886,7 @@ window.downloadReport = downloadReport;
 
 // ---------- wire up ----------
 $("#btn-new").onclick = newItemFlow;
-$("#btn-report").onclick = openReport;
+$("#btn-report").onclick = () => openReport();
 $("#btn-view").onclick = viewUser;
 $("#view-email").addEventListener("keydown", (e) => { if (e.key === "Enter") viewUser(); });
 $("#btn-refresh").onclick = async () => {

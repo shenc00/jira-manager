@@ -235,55 +235,110 @@ class JiraClient:
         status = issue.get("fields", {}).get("status") or {}
         return (status.get("statusCategory") or {}).get("key", "") == "done"
 
+    @staticmethod
+    def _is_subtask(issue: dict) -> bool:
+        return bool((issue.get("fields", {}).get("issuetype") or {}).get("subtask"))
+
+    @staticmethod
+    def _parent_key(issue: dict) -> str | None:
+        return (issue.get("fields", {}).get("parent") or {}).get("key")
+
+    _TYPE_RANK = {"Epic": 0, "Story": 1, "Task": 1, "Bug": 1}
+
+    def _sort_forest(self, roots: list[dict]) -> None:
+        def num(key: str) -> int:
+            try:
+                return int(key.rsplit("-", 1)[-1])
+            except ValueError:
+                return 0
+
+        def rank(node: dict) -> int:
+            return self._TYPE_RANK.get(node["type"], 1 if not node["type"]
+                                       .lower().startswith("sub") else 2)
+
+        def walk(nodes: list[dict]) -> None:
+            nodes.sort(key=lambda n: (rank(n), num(n["key"])))
+            for n in nodes:
+                walk(n["children"])
+
+        walk(roots)
+
     def build_tree(self, root_types: list[str], hide_done: bool = False,
                    assignee: str | None = None) -> list[dict]:
-        """Return roots (epics/tasks assigned to a user) with descendants nested.
+        """Build the work tree for a user (accountId; defaults to current user).
 
-        Roots are issues assigned to ``assignee`` (an accountId; defaults to the
-        current user) whose type is in ``root_types``. Children are fetched
-        level-by-level via the ``parent`` field, so sub-tasks (even if assigned
-        to others) are included.
+        Seeds from *every* issue assigned to the user (any type, so sub-tasks are
+        included even when their parent epic/story is owned by someone else),
+        expands the full descendant breakdown of the user's epics/stories, and
+        pulls in any missing ancestors as context so each item nests under its
+        real parent (e.g. a story you own appears under its epic, not as a
+        separate root).
 
-        When ``hide_done`` is true, issues in Jira's "Done" status category
-        (e.g. Completed, Done, Cancelled) are excluded at every level.
+        When ``hide_done`` is true, issues in the "Done" status category are
+        excluded (ancestors included only as needed for structure).
         """
-        types = ", ".join(f'"{t}"' for t in root_types)
         who = "currentUser()" if not assignee else f'"{assignee}"'
-        jql = f"assignee = {who} AND issuetype in ({types})"
-        if hide_done:
-            jql += " AND statusCategory != Done"
-        jql += " ORDER BY issuetype, created"
-        roots = self.search(jql)
+        done_clause = " AND statusCategory != Done" if hide_done else ""
+
+        mine = self.search(f"assignee = {who}{done_clause}")
+        mine_by_key = {i["key"]: i for i in mine}
 
         nodes: dict[str, dict] = {}
-        tree_roots: list[dict] = []
-        for issue in roots:
-            node = self._node(issue)
-            nodes[issue["key"]] = node
-            tree_roots.append(node)
+        parent_of: dict[str, str] = {}
 
-        frontier = list(nodes.keys())
-        seen = set(frontier)
+        def add(issue: dict) -> None:
+            key = issue["key"]
+            if key not in nodes:
+                nodes[key] = self._node(issue)
+                pk = self._parent_key(issue)
+                if pk:
+                    parent_of[key] = pk
+
+        for issue in mine:
+            add(issue)
+
+        # Expand descendants of every non-sub-task the user owns (any assignee),
+        # so their epics/stories show the full sub-task breakdown.
+        expanded: set[str] = set()
+        frontier = [k for k, i in mine_by_key.items() if not self._is_subtask(i)]
         while frontier:
-            keys = ", ".join(f'"{k}"' for k in frontier)
-            children = self.search(f"parent in ({keys}) ORDER BY issuetype, created")
-            next_frontier: list[str] = []
-            for child in children:
-                key = child["key"]
-                if key in seen:
+            batch = [k for k in frontier if k not in expanded]
+            expanded.update(batch)
+            if not batch:
+                break
+            keys = ", ".join(f'"{k}"' for k in batch)
+            children = self.search(f"parent in ({keys}) ORDER BY created")
+            nxt: list[str] = []
+            for ch in children:
+                if hide_done and self._is_done(ch):
                     continue
-                seen.add(key)
-                if hide_done and self._is_done(child):
-                    continue  # skip completed sub-tasks/children
-                node = self._node(child)
-                nodes[key] = node
-                parent_key = (child["fields"].get("parent") or {}).get("key")
-                if parent_key in nodes:
-                    nodes[parent_key]["children"].append(node)
-                else:
-                    tree_roots.append(node)
-                next_frontier.append(key)
-            frontier = next_frontier
+                add(ch)
+                if not self._is_subtask(ch):
+                    nxt.append(ch["key"])
+            frontier = nxt
+
+        # Pull in missing ancestors so items nest under their real parents.
+        for _ in range(6):  # safety bound on hierarchy depth
+            missing = {parent_of[k] for k in list(nodes)
+                       if k in parent_of and parent_of[k] not in nodes}
+            if not missing:
+                break
+            keys = ", ".join(f'"{k}"' for k in missing)
+            for issue in self.search(f"key in ({keys})"):
+                if hide_done and self._is_done(issue):
+                    continue  # don't resurrect a completed ancestor
+                add(issue)
+
+        # Link the forest.
+        tree_roots: list[dict] = []
+        for key, node in nodes.items():
+            pk = parent_of.get(key)
+            if pk and pk in nodes:
+                nodes[pk]["children"].append(node)
+            else:
+                tree_roots.append(node)
+
+        self._sort_forest(tree_roots)
         return tree_roots
 
     # -- single issue -------------------------------------------------------

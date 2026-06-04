@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import calendar
 import io
+import re
 from datetime import date
 
 from pptx import Presentation
@@ -31,20 +32,45 @@ WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 DARK = RGBColor(0x17, 0x2B, 0x4D)
 
 
-def rag_status(name: str, category: str, end, today: date | None = None):
-    """Return (label, colour) RAG assessment for a sub-task."""
+# Phrases in comments that indicate a delay / schedule risk. Multi-word where
+# possible to avoid false positives (e.g. "late" inside "related").
+DELAY_PHRASES = [
+    "delay", "postpone", "push back", "pushed back", "push out", "pushed out",
+    "slipp", "behind schedule", "falling behind", "fall behind",
+    "blocked", "blocker", "blocking", "on hold", "on-hold",
+    "waiting on", "waiting for", "awaiting", "reschedul",
+    "moving the tcd", "move the tcd", "moved the tcd", "moving tcd",
+    "revised tcd", "new tcd", "extend the timeline", "extended timeline",
+    "overrun", "at risk", "running late", "held up", "hold up", "stuck",
+    "revised timeline", "revised date", "new timeline", "miss the",
+    "won't make", "wont make", "not on track", "off track",
+]
+
+
+def mentions_delay(text: str) -> bool:
+    t = (text or "").lower()
+    return any(p in t for p in DELAY_PHRASES)
+
+
+def rag_status(name: str, category: str, end, comment_text: str = "",
+               today: date | None = None):
+    """Return (label, colour) RAG assessment for a sub-task.
+
+    "At Risk" (amber) is raised only when a delay/schedule concern is mentioned
+    in the comments. Overdue (past target date) stays red regardless.
+    """
     today = today or date.today()
     if (name or "").lower() == "cancelled":
         return "Cancelled", GREY
     if category == "done":
         return "Done", BLUE
     wd = fields_mod.working_days_until(end, today)
+    if wd is not None and wd < 0:
+        return "Overdue", RED
+    if mentions_delay(comment_text):
+        return "At Risk", AMBER
     if wd is None:
         return "No date", GREY
-    if wd < 0:
-        return "Overdue", RED
-    if wd <= 3:
-        return "At Risk", AMBER
     return "On Track", GREEN
 
 
@@ -58,6 +84,23 @@ def _flatten(text: str, limit: int = 220) -> str:
     """Collapse all whitespace/newlines to single spaces and truncate."""
     t = " ".join((text or "").split())
     return t[:limit] + ("…" if len(t) > limit else "")
+
+
+_BULLET_RE = re.compile(r"^\s*(?:[-*•●▪‣⁃o]|\d+[.)])\s+")
+
+
+def _summarize_description(text: str, limit: int = 320) -> str:
+    """Summarise a description. If it's bulleted/multi-line, join every point
+    (not just the first) into one '; '-separated line."""
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    lines = [_BULLET_RE.sub("", ln).strip() for ln in raw.splitlines()]
+    points = [ln for ln in lines if ln]
+    if not points:
+        return ""
+    s = points[0] if len(points) == 1 else "; ".join(points)
+    return s[:limit] + ("…" if len(s) > limit else "")
 
 
 def _in_month(value, year: int, month: int) -> bool:
@@ -111,8 +154,9 @@ def gather(client: JiraClient, year: int, month: int,
                 status_name = (sf.get("status") or {}).get("name", "")
                 cat = ((sf.get("status") or {}).get("statusCategory") or {}).get("key", "")
                 end = sf.get(tgt)
-                label, colour = rag_status(status_name, cat, end, today)
                 comment = client.latest_comment(s["key"])
+                comment_all = comment["allText"] if comment else ""
+                label, colour = rag_status(status_name, cat, end, comment_all, today)
                 if comment and comment["text"].strip():
                     update = _flatten(comment["text"])
                     update_meta = f'{comment["author"]}, {comment["date"]}'
@@ -134,7 +178,7 @@ def gather(client: JiraClient, year: int, month: int,
             stories_out.append({
                 "key": ck,
                 "summary": cf.get("summary", ""),
-                "description": _one_line(adf_to_text(cf.get("description"))),
+                "description": _summarize_description(adf_to_text(cf.get("description"))),
                 "progress": f"{done}/{total} sub-tasks done",
                 "subs": rows,
             })
@@ -142,7 +186,7 @@ def gather(client: JiraClient, year: int, month: int,
             result.append({
                 "key": ek,
                 "summary": ef.get("summary", ""),
-                "description": _one_line(adf_to_text(ef.get("description"))),
+                "description": _summarize_description(adf_to_text(ef.get("description"))),
                 "stories": stories_out,
             })
     return result

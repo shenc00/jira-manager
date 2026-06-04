@@ -11,9 +11,11 @@
     <h1>Jira Manager</h1>
     <div class="who" id="who"></div>
     <div class="actions">
+      <input type="email" id="view-email" class="view-email" placeholder="View user by email…" title="Enter a colleague's email to view their items">
+      <button id="btn-view">View</button>
       <label class="toggle-label"><input type="checkbox" id="chk-completed"> Show completed</label>
       <button id="btn-new" class="primary">+ New item</button>
-      <button id="btn-report" title="Generate a manager update slide for this month">📊 Manager update</button>
+      <button id="btn-report" title="Generate a monthly report slide">📊 Monthly Report</button>
       <button id="btn-onhold" title="Cancel items on hold longer than the threshold">Cancel stale on-hold</button>
       <button id="btn-refresh">Refresh from Jira</button>
       <button id="btn-review">Review changes <span class="badge" id="stage-count">0</span></button>

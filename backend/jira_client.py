@@ -150,6 +150,26 @@ class JiraClient:
             for it in projects[0].get("issuetypes", [])
         ]
 
+    def resolve_user(self, email: str) -> dict | None:
+        """Find a user by email (or name). Returns accountId/displayName/email."""
+        q = requests.utils.quote(email.strip())
+        try:
+            data = self._request("GET", f"/user/search?query={q}&maxResults=10")
+        except JiraError:
+            return None
+        if not data:
+            return None
+        # Prefer an exact email match (emails may be hidden by privacy settings).
+        for u in data:
+            if (u.get("emailAddress") or "").lower() == email.strip().lower():
+                return {"accountId": u["accountId"],
+                        "displayName": u.get("displayName", ""),
+                        "email": u.get("emailAddress", "")}
+        u = data[0]
+        return {"accountId": u["accountId"],
+                "displayName": u.get("displayName", ""),
+                "email": u.get("emailAddress", "")}
+
     def search_assignable(self, project_key: str, query: str) -> list[dict]:
         path = (
             f"/user/assignable/search?project={project_key}"
@@ -209,18 +229,21 @@ class JiraClient:
         status = issue.get("fields", {}).get("status") or {}
         return (status.get("statusCategory") or {}).get("key", "") == "done"
 
-    def build_tree(self, root_types: list[str], hide_done: bool = False) -> list[dict]:
-        """Return roots (epics/tasks assigned to me) with descendants nested.
+    def build_tree(self, root_types: list[str], hide_done: bool = False,
+                   assignee: str | None = None) -> list[dict]:
+        """Return roots (epics/tasks assigned to a user) with descendants nested.
 
-        Roots are issues assigned to the current user whose type is in
-        ``root_types``. Children are fetched level-by-level via the ``parent``
-        field, so sub-tasks (even if assigned to others) are included.
+        Roots are issues assigned to ``assignee`` (an accountId; defaults to the
+        current user) whose type is in ``root_types``. Children are fetched
+        level-by-level via the ``parent`` field, so sub-tasks (even if assigned
+        to others) are included.
 
         When ``hide_done`` is true, issues in Jira's "Done" status category
         (e.g. Completed, Done, Cancelled) are excluded at every level.
         """
         types = ", ".join(f'"{t}"' for t in root_types)
-        jql = f"assignee = currentUser() AND issuetype in ({types})"
+        who = "currentUser()" if not assignee else f'"{assignee}"'
+        jql = f"assignee = {who} AND issuetype in ({types})"
         if hide_done:
             jql += " AND statusCategory != Done"
         jql += " ORDER BY issuetype, created"

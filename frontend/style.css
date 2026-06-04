@@ -36,6 +36,9 @@ header h1 { font-size: 18px; margin: 0; }
 header .who { color: var(--muted); font-size: 13px; }
 header .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .toggle-label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 4px; cursor: pointer; margin-right: 4px; }
+.view-email { padding: 6px 9px; border: 1px solid var(--border); border-radius: 4px; font: inherit; width: 190px; }
+#who a { color: var(--blue); text-decoration: none; }
+#who a:hover { text-decoration: underline; }
 
 button {
   font: inherit;
@@ -201,6 +204,7 @@ input:disabled { background: #f4f5f7; color: var(--muted); }
 .rpt-table td { border: 1px solid var(--border); padding: 6px 8px; vertical-align: top; }
 .rpt-table td.rpt-epic { background: #f4f5f7; max-width: 220px; }
 .rag { display: inline-block; padding: 1px 8px; border-radius: 10px; color: #fff; font-weight: 700; font-size: 11px; white-space: nowrap; }
+.rpt-desc { font-style: italic; font-size: 11px; margin: 2px 0; }
 
 .toast {
   position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);

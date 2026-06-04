@@ -59,12 +59,17 @@ def _in_month(value, year: int, month: int) -> bool:
     return bool(d and d.year == year and d.month == month)
 
 
-def gather(client: JiraClient, year: int, month: int) -> list[dict]:
-    """Collect epics -> stories -> in-month sub-tasks with RAG status."""
+def gather(client: JiraClient, year: int, month: int,
+           assignee: str | None = None) -> list[dict]:
+    """Collect epics -> stories -> in-month sub-tasks with RAG status.
+
+    ``assignee`` is an accountId; defaults to the current user.
+    """
     today = date.today()
     tgt = fields_mod.TARGET_COMPLETION_FIELD
+    who = "currentUser()" if not assignee else f'"{assignee}"'
     epics = client.search(
-        "assignee = currentUser() AND issuetype = Epic AND statusCategory != Done "
+        f"assignee = {who} AND issuetype = Epic AND statusCategory != Done "
         "ORDER BY summary",
         fields=["summary", "description", "status"],
     )
@@ -74,7 +79,7 @@ def gather(client: JiraClient, year: int, month: int) -> list[dict]:
         stories_out = []
         children = client.search(
             f'parent = "{ek}" ORDER BY summary',
-            fields=["summary", "issuetype", "status"],
+            fields=["summary", "issuetype", "status", "description"],
         )
         for ch in children:
             cf = ch["fields"]
@@ -115,6 +120,7 @@ def gather(client: JiraClient, year: int, month: int) -> list[dict]:
             stories_out.append({
                 "key": ck,
                 "summary": cf.get("summary", ""),
+                "description": _one_line(adf_to_text(cf.get("description"))),
                 "progress": f"{done}/{total} sub-tasks done",
                 "subs": rows,
             })
@@ -162,7 +168,9 @@ def _set_cell(cell, runs, *, bold=False, size=9, color=DARK, fill=None,
         r.font.color.rgb = color
 
 
-def build_pptx(epics: list[dict], year: int, month: int) -> bytes:
+def build_pptx(epics: list[dict], year: int, month: int,
+               owner: str | None = None) -> bytes:
+    title_suffix = f"  —  {owner}" if owner else ""
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
@@ -172,7 +180,7 @@ def build_pptx(epics: list[dict], year: int, month: int) -> bytes:
     title_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.2), Inches(12.5), Inches(0.7))
     tp = title_box.text_frame.paragraphs[0]
     run = tp.add_run()
-    run.text = f"Monthly Update – {month_label(year, month)}"
+    run.text = f"Monthly Report – {month_label(year, month)}{title_suffix}"
     run.font.size = Pt(24)
     run.font.bold = True
     run.font.color.rgb = HEADER_BG
@@ -232,6 +240,8 @@ def build_pptx(epics: list[dict], year: int, month: int) -> bytes:
         story_lines = []
         if row["s_first"]:
             story_lines.append((f'{st["key"]}: {st["summary"]}  ({st["progress"]})', True))
+            if st.get("description"):
+                story_lines.append((st["description"], False))
         story_lines.append((f'↳ {sub["key"]}: {sub["summary"]}', False))
         _set_cell(table.cell(r, 1), story_lines, size=9)
         _set_cell(table.cell(r, 2), sub["start"], size=9, align=PP_ALIGN.CENTER)

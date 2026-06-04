@@ -7,6 +7,8 @@ let selectedKey = null;
 let META = { projects: [], priorities: [], defaultProject: "", rootTypes: [] };
 let ALL_LABELS = [];                  // every label in Jira, for the dropdown
 let _origLabels = [];                 // labels of the currently open item
+let viewedEmail = null;               // null = my own items; else a colleague's
+let viewingSelf = true;               // whether the current tree is mine
 const EPIC_COLORS = [                 // jsw-issue-color values (no native brown)
   "dark_orange", "orange", "yellow", "dark_yellow", "green", "dark_green",
   "teal", "dark_teal", "blue", "dark_blue", "purple", "dark_purple",
@@ -76,14 +78,38 @@ async function loadTree(refresh = false) {
   const params = new URLSearchParams();
   if (refresh) params.set("refresh", "true");
   if (showCompleted) params.set("show_completed", "true");
+  if (viewedEmail) params.set("email", viewedEmail);
   try {
     const data = await api("/api/tree" + (params.toString() ? "?" + params : ""));
-    $("#who").textContent = data.me ? `Signed in as ${data.me}` : "";
+    viewingSelf = data.isSelf;
+    if (data.isSelf) {
+      $("#who").innerHTML = data.me ? `Signed in as ${escapeHtml(data.me)}` : "";
+      $("#tree-pane h2") && ($("#tree-pane h2").textContent = "My epics & tasks");
+    } else {
+      $("#who").innerHTML = `Viewing <b>${escapeHtml(data.viewing)}</b>'s items `
+        + `<a href="#" id="back-to-me">← back to mine</a> <span class="muted">(you are ${escapeHtml(data.me)})</span>`;
+      $("#tree-pane h2") && ($("#tree-pane h2").textContent = `${data.viewing}'s epics & tasks`);
+      const back = $("#back-to-me");
+      if (back) back.onclick = (e) => { e.preventDefault(); backToMe(); };
+    }
     renderTree(data.tree);
   } catch (e) {
     $("#tree").innerHTML = `<p class="stage-error">${e.message}</p>`;
   }
   refreshStageCount();
+}
+
+function viewUser() {
+  const email = ($("#view-email").value || "").trim();
+  if (!email) { toast("Enter an email to view."); return; }
+  viewedEmail = email;
+  loadTree(true);
+}
+
+function backToMe() {
+  viewedEmail = null;
+  $("#view-email").value = "";
+  loadTree(true);
 }
 
 function renderTree(nodes) {
@@ -669,10 +695,10 @@ async function runOnHoldScan(opts = {}) {
 
 // ---------- manager update report ----------
 async function openReport() {
-  openModal(`<h3>Manager update</h3><p class="muted">Building this month's report…</p>`);
+  openModal(`<h3>Monthly Report</h3><p class="muted">Building this month's report…</p>`);
   let data;
   try {
-    data = await api("/api/report/data");
+    data = await api("/api/report/data" + (viewedEmail ? "?email=" + encodeURIComponent(viewedEmail) : ""));
   } catch (e) {
     openModal(`<h3 class="stage-error">Report failed</h3><p>${e.message}</p>
       <div class="modal-actions"><button onclick="closeModalBtn()">Close</button></div>`);
@@ -687,9 +713,14 @@ async function openReport() {
     ep.stories.forEach((st) => {
       st.subs.forEach((s, i) => {
         count++;
+        const storyHeader = i === 0
+          ? `<b>${st.key}: ${escapeHtml(st.summary)}</b> <span class="muted">(${st.progress})</span>`
+            + (st.description ? `<div class="muted rpt-desc">${escapeHtml(st.description)}</div>` : "")
+            + `<br>`
+          : "";
         rowsHtml += `<tr>
           ${!epShown ? `<td rowspan="${span}" class="rpt-epic"><b>${ep.key}: ${escapeHtml(ep.summary)}</b>${ep.description ? `<div class="muted">${escapeHtml(ep.description)}</div>` : ""}</td>` : ""}
-          <td>${i === 0 ? `<b>${st.key}: ${escapeHtml(st.summary)}</b> <span class="muted">(${st.progress})</span><br>` : ""}↳ ${s.key}: ${escapeHtml(s.summary)}</td>
+          <td>${storyHeader}↳ ${s.key}: ${escapeHtml(s.summary)}</td>
           <td>${s.start}</td><td>${s.end}</td>
           <td><span class="rag" style="background:${s.ragColor}">${s.rag}</span></td>
           <td>${escapeHtml(s.who)}</td>
@@ -706,8 +737,8 @@ async function openReport() {
     </table>` : `<p class="muted">No sub-tasks with a Target Completion Date in ${data.month}.</p>`;
 
   openModal(`
-    <h3>Manager update — ${data.month}</h3>
-    <p class="muted">${count} sub-task(s) due this month, across ${data.epics.length} epic(s). Review below, then download the slide.</p>
+    <h3>Monthly Report — ${data.month}</h3>
+    <p class="muted">For <b>${escapeHtml(data.owner || "me")}</b> · ${count} sub-task(s) due this month, across ${data.epics.length} epic(s). Review below, then download the slide.</p>
     <div class="rpt-wrap">${body}</div>
     <div class="modal-actions">
       <button onclick="closeModalBtn()">Close</button>
@@ -717,7 +748,8 @@ async function openReport() {
 
 function downloadReport(year, month) {
   // Content-Disposition on the endpoint triggers the file download.
-  window.location.href = `/api/report/pptx?year=${year}&month=${month}`;
+  const emailParam = viewedEmail ? `&email=${encodeURIComponent(viewedEmail)}` : "";
+  window.location.href = `/api/report/pptx?year=${year}&month=${month}${emailParam}`;
   toast("Downloading PowerPoint…", "success");
 }
 window.downloadReport = downloadReport;
@@ -725,9 +757,12 @@ window.downloadReport = downloadReport;
 // ---------- wire up ----------
 $("#btn-new").onclick = newItemFlow;
 $("#btn-report").onclick = openReport;
+$("#btn-view").onclick = viewUser;
+$("#view-email").addEventListener("keydown", (e) => { if (e.key === "Enter") viewUser(); });
 $("#btn-refresh").onclick = async () => {
   await loadTree(true);
-  if (META.autoCancelOnHold) runOnHoldScan();
+  // On-hold auto-cancel only applies to your own items, never a colleague's.
+  if (META.autoCancelOnHold && viewingSelf) runOnHoldScan();
 };
 $("#btn-review").onclick = reviewChanges;
 $("#btn-onhold").onclick = () => runOnHoldScan({ manual: true });
@@ -737,5 +772,5 @@ $("#chk-completed").onchange = () => loadTree(true);
   await loadMeta();
   await loadTree();
   // "Automatically on every load": run the stale on-hold cancellation now.
-  if (META.autoCancelOnHold) runOnHoldScan();
+  if (META.autoCancelOnHold && viewingSelf) runOnHoldScan();
 })();

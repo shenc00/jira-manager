@@ -132,21 +132,42 @@ def health():
             "site": config.JIRA_SITE}
 
 
+def _resolve_view(c, email: str | None) -> dict | None:
+    """Resolve an email to a user to view, or None for the current user."""
+    if not email or not email.strip():
+        return None
+    user = c.resolve_user(email)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"No Jira user found for '{email}'.")
+    return user
+
+
 @app.get("/api/tree")
-def get_tree(refresh: bool = False, show_completed: bool = False):
-    hide_done = config.HIDE_DONE and not show_completed
-    if _cache["tree"] is None or refresh or _cache.get("hide_done") != hide_done:
-        c = client()
-        try:
+def get_tree(refresh: bool = False, show_completed: bool = False,
+             email: str | None = None):
+    c = client()
+    try:
+        view = _resolve_view(c, email)
+        account = view["accountId"] if view else None
+        is_self = account is None
+        hide_done = config.HIDE_DONE and not show_completed
+        key = (account or "me", hide_done)
+        if _cache["tree"] is None or refresh or _cache.get("key") != key:
             _cache["me"] = c.myself()
-            _cache["tree"] = c.build_tree(config.ROOT_TYPES, hide_done=hide_done)
-            _cache["hide_done"] = hide_done
-        except JiraError as exc:
-            raise HTTPException(status_code=502, detail=str(exc))
+            _cache["tree"] = c.build_tree(
+                config.ROOT_TYPES, hide_done=hide_done, assignee=account)
+            _cache["key"] = key
+    except JiraError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    # Only overlay local staged changes when looking at your own tree.
+    tree = _overlay(_cache["tree"]) if is_self else _cache["tree"]
     return {
         "me": (_cache["me"] or {}).get("displayName", ""),
+        "viewing": view["displayName"] if view else (_cache["me"] or {}).get("displayName", ""),
+        "viewingEmail": (view or {}).get("email", ""),
+        "isSelf": is_self,
         "hideDone": hide_done,
-        "tree": _overlay(_cache["tree"]),
+        "tree": tree,
     }
 
 
@@ -333,11 +354,15 @@ def _report_period(year: int | None, month: int | None) -> tuple[int, int]:
 
 
 @app.get("/api/report/data")
-def report_data(year: int | None = None, month: int | None = None):
+def report_data(year: int | None = None, month: int | None = None,
+                email: str | None = None):
     c = client()
     y, m = _report_period(year, month)
     try:
-        epics = report_module.gather(c, y, m)
+        view = _resolve_view(c, email)
+        account = view["accountId"] if view else None
+        owner = view["displayName"] if view else (c.myself() or {}).get("displayName", "")
+        epics = report_module.gather(c, y, m, assignee=account)
     except JiraError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     # strip the internal colour object before returning JSON
@@ -346,19 +371,24 @@ def report_data(year: int | None = None, month: int | None = None):
             for s in st["subs"]:
                 s.pop("_color", None)
     return {"month": report_module.month_label(y, m), "year": y,
-            "monthNum": m, "epics": epics}
+            "monthNum": m, "owner": owner, "epics": epics}
 
 
 @app.get("/api/report/pptx")
-def report_pptx(year: int | None = None, month: int | None = None):
+def report_pptx(year: int | None = None, month: int | None = None,
+                email: str | None = None):
     c = client()
     y, m = _report_period(year, month)
     try:
-        epics = report_module.gather(c, y, m)
-        data = report_module.build_pptx(epics, y, m)
+        view = _resolve_view(c, email)
+        account = view["accountId"] if view else None
+        owner = view["displayName"] if view else (c.myself() or {}).get("displayName", "")
+        epics = report_module.gather(c, y, m, assignee=account)
+        data = report_module.build_pptx(epics, y, m, owner=owner)
     except JiraError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
-    fname = f"manager-update-{y}-{m:02d}.pptx"
+    who = (owner or "me").split()[0].lower() if owner else "me"
+    fname = f"monthly-report-{y}-{m:02d}-{who}.pptx"
     return StreamingResponse(
         io.BytesIO(data),
         media_type=(

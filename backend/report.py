@@ -89,9 +89,13 @@ def _flatten(text: str, limit: int = 220) -> str:
 _BULLET_RE = re.compile(r"^\s*(?:[-*•●▪‣⁃o]|\d+[.)])\s+")
 
 
-def _summarize_description(text: str, limit: int = 320) -> str:
+def _summarize_description(text: str, limit: int = 320,
+                           max_words: int | None = None) -> str:
     """Summarise a description. If it's bulleted/multi-line, join every point
-    (not just the first) into one '; '-separated line."""
+    (not just the first) into one '; '-separated line.
+
+    ``max_words`` caps the result to a word count (used for epics).
+    """
     raw = (text or "").strip()
     if not raw:
         return ""
@@ -100,6 +104,11 @@ def _summarize_description(text: str, limit: int = 320) -> str:
     if not points:
         return ""
     s = points[0] if len(points) == 1 else "; ".join(points)
+    if max_words:
+        words = s.split()
+        if len(words) > max_words:
+            return " ".join(words[:max_words]) + "…"
+        return s
     return s[:limit] + ("…" if len(s) > limit else "")
 
 
@@ -186,7 +195,8 @@ def gather(client: JiraClient, year: int, month: int,
             result.append({
                 "key": ek,
                 "summary": ef.get("summary", ""),
-                "description": _summarize_description(adf_to_text(ef.get("description"))),
+                "description": _summarize_description(
+                    adf_to_text(ef.get("description")), max_words=40),
                 "stories": stories_out,
             })
     return result

@@ -40,6 +40,10 @@ locally and only written to Jira when you review and push**.
 - 👥 **View any colleague** — enter a teammate's email to see *their* tree and
   generate *their* Monthly Report (read-focused; your own staging/auto-cancel
   never touch their items).
+- 🔌 **Automatic port selection** — if the default port is blocked or busy
+  (varies by machine), the launcher finds a working one and opens your browser
+  there; if the running page ever loses the server, a banner searches the known
+  ports and gives you a working link.
 - 🔒 **Local & private** — your API token lives only in `.env`; the browser
   talks to your local server only. Works behind corporate HTTPS-inspection
   proxies (trusts the OS certificate store).
@@ -86,8 +90,13 @@ locally and only written to Jira when you review and push**.
   never leaves your laptop and no one else on the network can reach it.
 - Open **http://127.0.0.1:8123** in any browser (Chrome/Edge/Firefox).
 - **Why 8123?** A port is just the numbered "door" the server listens on. Port
-  8000 is blocked by policy on this machine, so the default is **8123**. If it's
-  ever busy, run `python run.py 9000` and open `http://127.0.0.1:9000`.
+  8000 is blocked by policy on this machine, so the default is **8123**.
+- **Auto port selection** — if 8123 is blocked or busy on a given machine, the
+  launcher automatically tries a list of candidate ports and starts on the first
+  that works, printing the address and opening your browser there. You can also
+  force one with `python run.py 9000`. If the page is open and the server later
+  moves, a banner appears that searches the known ports and links you to the
+  working one to reload.
 - **It only works while the server is running.** Keep the terminal window open;
   closing it (or `Ctrl+C`) stops the app. Your staged changes are safe on disk
   (`data/staging.json`) and reappear next time you start it.

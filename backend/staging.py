@@ -190,8 +190,10 @@ class StagingStore:
             if key.startswith("temp:"):
                 key = temp_to_real.get(key, key)
             try:
-                self._apply_update(client, key, op["changes"])
+                warnings = self._apply_update(client, key, op["changes"])
                 report["updated"].append(key)
+                for w in warnings:
+                    report["warnings"].append({"key": key, "warning": w})
             except Exception as exc:  # noqa: BLE001
                 op["error"] = str(exc)
                 remaining.append(op)
@@ -211,7 +213,10 @@ class StagingStore:
             client.transition_issue_by_name(key, data["status"])
 
     @staticmethod
-    def _apply_update(client: JiraClient, key: str, changes: dict) -> None:
+    def _apply_update(client: JiraClient, key: str, changes: dict) -> list[str]:
+        """Apply an update. Returns non-fatal warnings (e.g. time tracking not
+        on the screen) so they don't fail the whole operation."""
+        warnings: list[str] = []
         fields: dict[str, Any] = {}
         if "summary" in changes:
             fields["summary"] = changes["summary"]
@@ -230,7 +235,25 @@ class StagingStore:
             fields[field_id] = fields_mod.format_custom(field_id, value)
         if fields:
             client.update_issue(key, fields)
+
+        # Time tracking goes in its own update: if the Time Tracking field isn't
+        # on the issue's screen Jira rejects it, and we don't want that to undo
+        # the other field changes above.
+        tt: dict[str, str] = {}
+        if changes.get("originalEstimate"):
+            tt["originalEstimate"] = changes["originalEstimate"]
+        if changes.get("remainingEstimate"):
+            tt["remainingEstimate"] = changes["remainingEstimate"]
+        if tt:
+            try:
+                client.update_issue(key, {"timetracking": tt})
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(
+                    f"{key}: could not set time tracking — likely not on the "
+                    f"issue's edit screen in Jira ({exc})")
+
         if changes.get("comment"):
             client.add_comment(key, changes["comment"])
         if changes.get("status"):
             client.transition_issue_by_name(key, changes["status"])
+        return warnings

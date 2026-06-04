@@ -347,7 +347,7 @@ class JiraClient:
         base = [
             "summary", "description", "issuetype", "status", "assignee",
             "priority", "labels", "duedate", "parent", "comment", "created",
-            "updated", "reporter",
+            "updated", "reporter", "timetracking",
         ]
         fields = ",".join(base + fields_mod.CRITICAL_IDS)
         data = self._request("GET", f"/issue/{key}?fields={fields}")
@@ -377,6 +377,14 @@ class JiraClient:
             for spec in fields_mod.CRITICAL_FIELDS
         ]
 
+        tt = f.get("timetracking") or {}
+        timetracking = {
+            "originalEstimate": tt.get("originalEstimate", ""),
+            "remainingEstimate": tt.get("remainingEstimate", ""),
+            "timeSpent": tt.get("timeSpent", ""),
+            "editable": "timetracking" in editmeta,
+        }
+
         target = f.get(fields_mod.TARGET_COMPLETION_FIELD)
         flag, wdays = fields_mod.due_flag(target)
         return {
@@ -394,6 +402,7 @@ class JiraClient:
             "project": data["key"].split("-")[0],
             "comments": comments,
             "critical": critical,
+            "timetracking": timetracking,
             "dueFlag": flag,
             "workingDays": wdays,
         }

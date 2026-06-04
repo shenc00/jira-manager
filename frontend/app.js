@@ -16,16 +16,75 @@ const EPIC_COLORS = [                 // jsw-issue-color values (no native brown
 ];
 
 async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      headers: { "Content-Type": "application/json" },
+      ...opts,
+    });
+  } catch (netErr) {
+    // The server is unreachable on this port — start the port watchdog.
+    onDisconnected();
+    throw new Error("Lost connection to the server.");
+  }
+  hideConnBanner(); // a successful round-trip means we're connected
   if (!res.ok) {
     let msg = res.statusText;
     try { msg = (await res.json()).detail || msg; } catch (_) {}
     throw new Error(msg);
   }
   return res.status === 204 ? null : res.json();
+}
+
+// ---------- connection watchdog / auto port discovery ----------
+// Keep in sync with PORT_CANDIDATES in run.py
+const PORT_CANDIDATES = [8123, 8200, 8456, 8765, 9000, 9123, 9456, 7123, 7777, 10123];
+let _probing = false;
+
+function showConnBanner(html) {
+  const b = $("#conn-banner");
+  b.innerHTML = html;
+  b.classList.remove("hidden");
+}
+function hideConnBanner() {
+  const b = $("#conn-banner");
+  if (b && !b.classList.contains("hidden")) b.classList.add("hidden");
+}
+
+function fetchTimeout(url, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { signal: ctrl.signal, mode: "cors" })
+    .finally(() => clearTimeout(t));
+}
+
+async function probeForServer() {
+  const here = location.port || "80";
+  for (const p of PORT_CANDIDATES) {
+    if (String(p) === String(here)) continue;
+    try {
+      const r = await fetchTimeout(`http://127.0.0.1:${p}/api/health`, 1200);
+      if (r.ok) return `http://127.0.0.1:${p}/`;
+    } catch (_) { /* try next */ }
+  }
+  return null;
+}
+
+async function onDisconnected() {
+  if (_probing) return;
+  _probing = true;
+  showConnBanner("⚠ Lost connection to the server — searching for a working port…");
+  const url = await probeForServer();
+  if (url) {
+    showConnBanner(
+      `✓ Server found at <b>${url}</b> — ` +
+      `<a href="${url}">click here to reload on the working port</a>.`);
+  } else {
+    showConnBanner(
+      "⚠ Couldn't reach the server on any known port. Make sure it's running " +
+      "(<code>python run.py</code>), then reload this page.");
+  }
+  _probing = false;
 }
 
 function toast(msg, kind = "") {
@@ -274,6 +333,8 @@ function renderIssueDetail(issue) {
 
     ${criticalFieldsHtml(issue.critical)}
 
+    ${timeTrackingHtml(issue.timetracking)}
+
     ${field("Labels", labelsWidget("f-labels", issue.labels))}
     ${field("Add comment", `<textarea id="f-comment" placeholder="Leave blank to skip"></textarea>`)}
 
@@ -300,6 +361,35 @@ function criticalFieldsHtml(critical) {
   for (let i = 0; i < cells.length; i += 2)
     html += `<div class="row">${cells[i] || ""}${cells[i + 1] || ""}</div>`;
   return html;
+}
+
+// Time tracking (original + remaining estimate). Editable per editmeta; if not
+// on the issue's screen we still show the inputs but disabled, with a note.
+function timeTrackingHtml(tt) {
+  if (!tt) return "";
+  const dis = tt.editable ? "" : "disabled";
+  const note = tt.editable
+    ? ""
+    : ` <span class="muted">(not on this issue's screen — saving may be rejected by Jira)</span>`;
+  const spent = tt.timeSpent
+    ? `<div class="muted" style="font-size:11px">Logged so far: ${escapeHtml(tt.timeSpent)}</div>` : "";
+  return `<div class="section-label">Time tracking${note}</div>
+    <div class="row">
+      ${field("Original estimate", `<input type="text" id="tt-orig" data-orig="${escapeAttr(tt.originalEstimate || "")}" value="${escapeAttr(tt.originalEstimate || "")}" placeholder="e.g. 2w 3d 4h" ${dis}>`)}
+      ${field("Remaining estimate", `<input type="text" id="tt-rem" data-orig="${escapeAttr(tt.remainingEstimate || "")}" value="${escapeAttr(tt.remainingEstimate || "")}" placeholder="e.g. 1w 2d" ${dis}>`)}
+    </div>
+    ${spent}`;
+}
+
+function collectTimeTracking() {
+  const o = document.getElementById("tt-orig");
+  const r = document.getElementById("tt-rem");
+  const out = {};
+  if (o && !o.disabled && o.value.trim() && o.value !== o.dataset.orig)
+    out.originalEstimate = o.value.trim();
+  if (r && !r.disabled && r.value.trim() && r.value !== r.dataset.orig)
+    out.remainingEstimate = r.value.trim();
+  return out;
 }
 
 function collectCustom() {
@@ -371,6 +461,7 @@ function collectChanges() {
   const labels = collectLabels("f-labels");
   const labelsChanged =
     JSON.stringify([...labels].sort()) !== JSON.stringify([..._origLabels].sort());
+  const tt = collectTimeTracking();
   return {
     summary: document.getElementById("f-summary").value.trim() || null,
     description: document.getElementById("f-desc").value,
@@ -381,6 +472,8 @@ function collectChanges() {
     comment: document.getElementById("f-comment").value.trim() || null,
     assigneeId: resolveAssignee("f-assignee"),
     custom: collectCustom(),
+    originalEstimate: tt.originalEstimate || null,
+    remainingEstimate: tt.remainingEstimate || null,
   };
 }
 
@@ -625,11 +718,13 @@ async function pushChanges() {
     const created = report.created.map((c) => `${c.tempId} → <b>${c.key}</b> ${c.summary}`).join("<br>") || "—";
     const updated = report.updated.join(", ") || "—";
     const errors = report.errors.map((e) => `<div class="stage-error">${e.op}: ${e.error}</div>`).join("");
+    const warnings = (report.warnings || []).map((w) => `<div class="muted">⚠ ${escapeHtml(w.warning || w)}</div>`).join("");
     openModal(`
       <h3>${report.errors.length ? "Pushed with errors" : "✓ Pushed to Jira"}</h3>
       <div class="field"><label>Created</label><div>${created}</div></div>
       <div class="field"><label>Updated</label><div>${updated}</div></div>
       ${errors ? `<div class="field"><label>Errors (remain staged)</label>${errors}</div>` : ""}
+      ${warnings ? `<div class="field"><label>Warnings</label>${warnings}</div>` : ""}
       <div class="modal-actions"><button class="primary" onclick="closeModalBtn()">Done</button></div>`);
     toast(report.errors.length ? "Pushed with some errors." : "All changes pushed.",
           report.errors.length ? "error" : "success");

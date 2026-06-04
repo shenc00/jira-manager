@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -25,6 +26,14 @@ from .staging import StagingStore
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 app = FastAPI(title="Jira Manager")
+# Allow the UI to probe /api/health on sibling ports (different port = different
+# origin) when it needs to locate a server that moved. Localhost-only tool.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
 staging = StagingStore(config.STAGING_FILE)
 
 # In-memory cache of the last fetched tree.
@@ -54,6 +63,8 @@ class UpdateBody(BaseModel):
     status: str | None = None
     comment: str | None = None
     custom: dict[str, Any] | None = None
+    originalEstimate: str | None = None
+    remainingEstimate: str | None = None
 
 
 class CreateBody(BaseModel):

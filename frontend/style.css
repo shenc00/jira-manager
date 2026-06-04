@@ -13,6 +13,18 @@
 
 * { box-sizing: border-box; }
 
+.conn-banner {
+  background: #fffae6;
+  border-bottom: 2px solid var(--amber);
+  color: #172b4d;
+  padding: 10px 20px;
+  font-size: 14px;
+  text-align: center;
+}
+.conn-banner.hidden { display: none; }
+.conn-banner a { color: var(--blue); font-weight: 700; }
+.conn-banner code { background: #ebecf0; padding: 1px 5px; border-radius: 3px; }
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;

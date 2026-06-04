@@ -4,15 +4,15 @@
 
 .DESCRIPTION
   Packages ONLY the committed code via `git archive`, so .env, data/, .git,
-  .venv and __pycache__ are never included — your Jira token can't leak into the
-  zip. The zip is written to dist\jira-manager.zip.
+  .venv and __pycache__ are never included - your Jira token cannot leak into
+  the zip. The zip is written to dist\jira-manager.zip.
 
   If -Destination is given (e.g. a locally-synced SharePoint folder), the zip is
   copied there, which replaces the shared file once OneDrive syncs it.
 
 .EXAMPLE
   .\build-release.ps1
-  .\build-release.ps1 -Destination "C:\Users\10320283\BD\GSC ...\Github\jira-manager.zip"
+  .\build-release.ps1 -Destination "C:\Users\you\BD\GSC\Github\jira-manager.zip"
 #>
 param([string]$Destination = "")
 
@@ -33,9 +33,9 @@ try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
     try {
-        $names = $archive.Entries.FullName
+        $names = @($archive.Entries.FullName)
         if ($names -match '(^|/)\.env$') {
-            throw "ABORT: a real .env file is inside the zip — not publishing."
+            throw "ABORT: a real .env file is inside the zip. Not publishing."
         }
     } finally { $archive.Dispose() }
 
@@ -45,10 +45,13 @@ try {
         Copy-Item $zip $Destination -Force
         Write-Output ("Published to {0}" -f $Destination)
         Write-Output "OneDrive will sync it to SharePoint shortly."
-    } else {
-        Write-Output "No -Destination given. Upload dist\jira-manager.zip to SharePoint manually,"
-        Write-Output "or pass -Destination <synced SharePoint path> to publish automatically."
     }
-} finally {
+    else {
+        Write-Output "No -Destination given."
+        Write-Output "Upload dist\jira-manager.zip to SharePoint manually, or pass"
+        Write-Output "-Destination with a synced SharePoint path to publish automatically."
+    }
+}
+finally {
     Pop-Location
 }

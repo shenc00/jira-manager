@@ -33,10 +33,12 @@ locally and only written to Jira when you review and push**.
 - 🧹 **Auto-cancel stale on-hold** — items in "On Hold" for more than a
   threshold (default 6 months) can be transitioned to Cancelled automatically,
   with a safety cap and an audit log.
-- 📊 **Monthly Report → PowerPoint** — a one-slide table of this month's
-  sub-tasks (by Target Completion Date) grouped by epic/story, with a **RAG
-  status**, the **latest comment** per sub-task, and a **summarised story
-  description**. Preview in the browser, then download the `.pptx`.
+- 📊 **Monthly Report → PowerPoint** — a one-slide table of a month's sub-tasks
+  (by Target Completion Date) grouped by epic/story. **Pick any month**
+  (prev/next/this-month), and each row shows a **RAG status**, the raw Jira
+  **Progress** status, the **latest comment**, and a **summarised story
+  description** (epics capped to 40 words). Preview in the browser, then download
+  the `.pptx`.
 - 👥 **View any colleague** — enter a teammate's email to see *their* tree and
   generate *their* Monthly Report (read-focused; your own staging/auto-cancel
   never touch their items).
@@ -121,6 +123,8 @@ Jira allows for that issue type (date fields not on a screen appear read-only):
 - **Status** — only the transitions reachable from the current status
 - **Priority**, **Assignee** (type 2+ letters to search), **Due date**
 - **Dates** — Start date, Development End Date, UAT Start/End, Target Completion
+- **Time tracking** — Original and Remaining estimate (Jira duration format,
+  e.g. `2w 3d 4h`); shown read-only if the field isn't on the issue's screen
 - **Labels** — multi-select dropdown of existing labels (+ a box to add new ones)
 - **Add comment**
 
@@ -145,18 +149,23 @@ applied. Anything that fails stays staged with the error shown.
 > review area.
 
 ### Monthly Report (PowerPoint)
-Click **📊 Monthly Report**. It collects the current month's sub-tasks (those
-with a Target Completion Date this month) under your open epics/stories and
+Click **📊 Monthly Report**. It collects a month's sub-tasks (those with a
+Target Completion Date in the selected month) under your open epics/stories and
 shows a preview table with columns **Epic · Story/Sub-task · Start · Target end
-· Status · Responsible · Latest update**. Then **Download PowerPoint** for a
-single-slide `.pptx`.
+· Status · Progress · Responsible · Latest update**. Then **Download
+PowerPoint** for a single-slide `.pptx`.
 
-- **Status is RAG**: *Done* (blue), *Cancelled* (grey), *Overdue* (red, past
-  target), *At Risk* (amber — **only when a delay is mentioned in the
+- **Month selector** — defaults to the current month; use the **◀ / ▶** arrows,
+  the month picker, or **This month** to view any past or future month. The
+  preview and the downloaded slide both follow the selected month.
+- **Status** is the RAG roll-up: *Done* (blue), *Cancelled* (grey), *Overdue*
+  (red, past target), *At Risk* (amber — **only when a delay is mentioned in the
   comments**), otherwise *On Track* (green).
+- **Progress** is the raw Jira workflow status (New, In Progress, Development,
+  Completed, Cancelled, Validation, etc.).
 - **Latest update** is each sub-task's most recent comment (author + date).
-- **Story description** is summarised; if it's bulleted, all points are
-  combined (not just the first).
+- **Descriptions** are summarised; bulleted ones combine every point (not just
+  the first), and epic descriptions are capped to 40 words.
 
 ### View a colleague's items
 Type a teammate's email in **View user by email** → **View**. The tree and the
@@ -214,10 +223,13 @@ Each user only ever sees and does what their Jira permissions allow.
 
 - **Status changes** use Jira workflow *transitions*, so only statuses reachable
   from the current one are offered.
-- **Epic colour / some date & time-tracking fields** can only be written if
-  they're on the issue's edit screen in Jira. Epic colour is applied
-  best-effort after creating an epic; if your project doesn't expose it, the
-  epic is still created and a warning is shown. Time-tracking is omitted.
+- **Screen-restricted fields** — some fields (epic colour, time tracking, and
+  certain dates) can only be written if they're on the issue's edit screen in
+  Jira. Time tracking and dates render read-only when they're not editable.
+  Time tracking is written as a *separate* update so a screen restriction can't
+  undo your other edits; if Jira rejects it you get a **warning** on push (not a
+  failure). Epic colour is applied best-effort after creating an epic; if your
+  project doesn't expose it, the epic is still created with a warning.
 - **Sub-tasks require a parent** (enforced by the form).
 - The hierarchy uses the modern Cloud `parent` field.
 - Your `.env`, `data/staging.json` and `data/auto_cancel.log` are git-ignored —

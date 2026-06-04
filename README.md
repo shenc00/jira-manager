@@ -449,18 +449,46 @@ you can also share.
 
 ### Refreshing the SharePoint zip
 
-Pushing to that exact SharePoint file needs **one** of these (a third party
-can't write there without access):
+The simplest reliable method: **sync the SharePoint folder once**, then run one
+command after each update. OneDrive uploads the new zip automatically.
 
-- **Simplest — sync once, then one command.** In the browser, open the SharePoint
-  *…/DELIVER Domain/Github* folder and click **Sync** (or *Add shortcut to
-  OneDrive*). It then appears under `C:\Users\<you>\BD\…\Github\`. After that,
-  publish an update with:
-  ```powershell
-  .\build-release.ps1 -Destination "C:\Users\<you>\BD\...\Github\jira-manager.zip"
-  ```
-  This rebuilds the clean zip and drops it into the synced folder; OneDrive
-  replaces the shared file automatically.
+#### One-time setup (do this once)
+
+1. In your browser, open the SharePoint **…/DELIVER Domain/Github** folder.
+2. Click **Sync** (or **Add shortcut to OneDrive**) and wait until the folder
+   appears in File Explorer.
+3. Copy its local path: in File Explorer open that synced **Github** folder →
+   click the **address bar** → copy the full path (e.g.
+   `C:\Users\10320283\BD\GSC Transformation...\DELIVER Domain\Github`). You'll
+   add `\jira-manager.zip` to it below.
+
+> **You only click "Sync" once.** After that, OneDrive's background syncing is
+> automatic — you do **not** re-sync on every update.
+
+#### Repeating workflow (each time you publish an update)
+
+In **PowerShell**, copy-paste these (commit your changes first so the zip has
+the latest code), replacing the destination with *your* synced Github path:
+
+```powershell
+cd "C:\Users\10320283\OneDrive - BD\Documents\Github\jira-manager"
+git add -A
+git commit -m "describe the update"
+git push
+.\build-release.ps1 -Destination "C:\Users\10320283\BD\...\DELIVER Domain\Github\jira-manager.zip"
+```
+
+The last line rebuilds the clean zip and drops it into the synced folder;
+OneDrive replaces the shared SharePoint file by itself (wait for the file's
+green check ✓). Notes:
+- **No `.venv` needed** — the build only uses `git`, not Python.
+- If you see *"running scripts is disabled on this system"*, run
+  `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, then re-run.
+- To **test without publishing**, run `.\build-release.ps1` with no
+  `-Destination` — it builds `dist\jira-manager.zip` so you can inspect it first.
+
+#### Other options
+
 - **Fully automated in CI (needs IT/admin).** The release workflow has an
   optional **“Upload to SharePoint”** step using the Microsoft Graph API. It
   activates once an admin creates an Azure AD app registration and adds these

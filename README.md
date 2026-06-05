@@ -252,17 +252,21 @@ Your browser opens automatically.
   PATH — go back to **Install Python** above.
 
 > [!IMPORTANT]
-> ### ⚠️ Keep PowerShell open — it **is** the app
-> **The web page only works while `python run.py` is running in PowerShell.**
-> If you **close the PowerShell window, the server stops and the page goes
-> blank / stops loading.** Minimise it instead of closing it.
+> ### ⚠️ Keep the black window open — it **is** the app
+> **The web page only works while the app is running.** Whether you started it
+> by **double-clicking `start-jira-manager.bat`** or from PowerShell, a black
+> command window stays open — **that window is the server.** If you **close it,
+> the server stops and the page goes blank / stops loading.** Minimise it
+> instead of closing it.
 >
-> **To start it again next time you log on:** open PowerShell, `cd` to your
-> `jira-manager` folder, then run:
+> **If double-clicking the `.bat` doesn't work**, start it manually in
+> PowerShell: open PowerShell, `cd` to your `jira-manager` folder, then run
+> these two lines:
 > ```powershell
 > .\.venv\Scripts\Activate.ps1
 > python run.py
 > ```
+> Keep that PowerShell window open while you use the app.
 
 #### Can I just bookmark the address?
 

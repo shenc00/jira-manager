@@ -19,9 +19,15 @@ from pydantic import BaseModel
 
 from . import config
 from . import fields as fields_module
-from . import report as report_module
 from .jira_client import JiraError, from_config
 from .staging import StagingStore
+
+# The Monthly Report needs python-pptx. If it isn't installed, the rest of the
+# app (tree, edit, create, push) must still work — reports just report an error.
+try:
+    from . import report as report_module
+except ImportError:
+    report_module = None
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -364,9 +370,20 @@ def _report_period(year: int | None, month: int | None) -> tuple[int, int]:
     return (year or today.year), (month or today.month)
 
 
+def _require_report():
+    if report_module is None:
+        raise HTTPException(
+            status_code=503,
+            detail="The Monthly Report needs the python-pptx library. In "
+                   "PowerShell (with the .venv active) run: "
+                   "pip install -r requirements.txt",
+        )
+
+
 @app.get("/api/report/data")
 def report_data(year: int | None = None, month: int | None = None,
                 email: str | None = None):
+    _require_report()
     c = client()
     y, m = _report_period(year, month)
     try:
@@ -388,6 +405,7 @@ def report_data(year: int | None = None, month: int | None = None,
 @app.get("/api/report/pptx")
 def report_pptx(year: int | None = None, month: int | None = None,
                 email: str | None = None):
+    _require_report()
     c = client()
     y, m = _report_period(year, month)
     try:

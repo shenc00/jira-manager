@@ -17,9 +17,10 @@ DEFAULT_PROJECT = os.environ.get("JIRA_PROJECT", "").strip()
 REPORT_EMAIL = os.environ.get("JIRA_REPORT_EMAIL", "").strip() or JIRA_EMAIL
 
 # How the report email is delivered via Outlook:
-#   "send"    - send it silently (default)
 #   "display" - open the draft in Outlook so you can review and click Send
-EMAIL_MODE = os.environ.get("JIRA_EMAIL_MODE", "send").strip().lower()
+#               (default; reliable - silent send often gets stuck in the Outbox)
+#   "send"    - send it silently without opening Outlook
+EMAIL_MODE = os.environ.get("JIRA_EMAIL_MODE", "display").strip().lower()
 
 ROOT_TYPES = [
     t.strip()

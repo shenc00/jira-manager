@@ -378,17 +378,17 @@ PowerPoint** for a single-slide `.pptx`.
   none in 4 wks"*).
 - **Descriptions** are summarised; bulleted ones combine every point (not just
   the first), and epic descriptions are capped to 40 words.
-- **📧 Email PowerPoint** — click this button (next to *Download PowerPoint*) to
-  send the slide to yourself through your **local Outlook**. **The sender is you**
-  (your default Outlook account); it goes to your `JIRA_EMAIL`, or set
-  `JIRA_REPORT_EMAIL` in `.env` for a different recipient. A toast confirms who
-  it was sent from/to, or explains why it couldn't. *(Requires the Outlook
-  desktop app installed and signed in.)*
-  - **Didn't arrive?** Set `JIRA_EMAIL_MODE=display` in `.env`. Instead of
-    sending silently, the button then **opens the email in Outlook** (recipient
-    and attachment pre-filled) so you can see it and click **Send** yourself —
-    the most reliable option when corporate policy blocks programmatic sending.
-    Also check your **Outbox / Junk** and that Outlook is open and signed in.
+- **📧 Email PowerPoint** — click this button (next to *Download PowerPoint*).
+  By default it **opens the email in your local Outlook** with the recipient and
+  the PowerPoint attachment already filled in — you just click **Send**. **The
+  sender is you** (your default Outlook account); it's addressed to your
+  `JIRA_EMAIL`, or set `JIRA_REPORT_EMAIL` in `.env` for a different recipient.
+  - Why open-then-send rather than fully automatic? Silent sending via Outlook
+    often **lands in the Outbox and never goes out** if Outlook isn't actively
+    running — so "it said sent" but nothing arrives. Opening the draft is
+    reliable and lets you see it leave. To switch to fully silent sending, set
+    `JIRA_EMAIL_MODE=send` in `.env` (then check your **Outbox/Sent/Junk** if it
+    doesn't arrive, and keep Outlook open).
 
 ### View a colleague's items
 Type a teammate's email in **View user by email** → **View**. The tree and the

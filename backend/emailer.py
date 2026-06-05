@@ -51,6 +51,13 @@ def send_via_outlook(to: str, subject: str, body: str,
             mail.Display(False)  # open the draft; the user reviews and sends
         else:
             mail.Send()
+            # Send() only queues to the Outbox; nudge a send/receive so it
+            # actually goes out even if Outlook was idle.
+            try:
+                for sync in outlook.GetNamespace("MAPI").SyncObjects:
+                    sync.Start()
+            except Exception:  # noqa: BLE001 - best effort
+                pass
         return sender
     except Exception as exc:  # noqa: BLE001 - surface a readable error
         verb = "open" if display else "send"

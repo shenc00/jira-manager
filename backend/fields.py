@@ -42,8 +42,11 @@ def format_custom(field_id: str, value):
     if kind == "date":
         return str(value)[:10]
     if kind == "datetime":
+        # Jira datetime fields (e.g. Target Completion Date) require a time.
+        # The UI only captures a date, so default the time to 12:00 (noon) -
+        # midday avoids any timezone shift to the previous/next day.
         s = str(value)
-        return s if "T" in s else f"{s[:10]}T00:00:00.000+0000"
+        return s if "T" in s else f"{s[:10]}T12:00:00.000+0000"
     return value
 
 

@@ -460,33 +460,46 @@ class JiraClient:
 
     def recent_comments(self, key: str, limit: int = 3,
                         within_days: int = 28) -> dict:
-        """Up to ``limit`` most-recent comments created within ``within_days``,
-        newest first, plus the combined text of all recent comments (for the
-        delay scan). Default: latest 3 comments within the last 4 weeks.
+        """Latest ``limit`` comments created within ``within_days`` (default:
+        last 3 within the last 4 weeks of *now*), newest first.
+
+        If there are no comments in that window but the issue does have
+        comments, the single most-recent comment is returned (``fallback``).
+        ``allText`` is every comment's text combined (for the delay scan).
+
+        The ordering is computed here rather than relying on Jira's response
+        order, so the window filter is reliable.
         """
         try:
-            data = self._request(
-                "GET", f"/issue/{key}/comment?maxResults=50&orderBy=-created")
+            data = self._request("GET", f"/issue/{key}/comment?maxResults=100")
         except JiraError:
-            return {"recent": [], "allText": ""}
-        comments = data.get("comments", [])  # newest first
-        cutoff = date.today() - timedelta(days=within_days)
-        recent: list[dict] = []
-        for c in comments:
-            created = fields_mod.to_date(c.get("created"))
-            if created is None:
-                continue
-            if created < cutoff:
-                break  # sorted newest-first, so everything after is older too
-            recent.append({
+            return {"recent": [], "fallback": False, "allText": ""}
+        comments = data.get("comments", [])
+
+        def created_of(c):
+            return fields_mod.to_date(c.get("created")) or date.min
+
+        ordered = sorted(comments, key=created_of, reverse=True)  # newest first
+
+        def fmt(c):
+            return {
                 "author": (c.get("author") or {}).get("displayName", ""),
                 "date": (c.get("created") or "")[:10],
                 "text": adf_to_text(c.get("body")),
-            })
-            if len(recent) >= limit:
-                break
-        all_text = "  ".join(adf_to_text(c.get("body")) for c in comments)
-        return {"recent": recent, "allText": all_text}
+            }
+
+        cutoff = date.today() - timedelta(days=within_days)
+        within = [c for c in ordered if created_of(c) >= cutoff]
+
+        if within:
+            recent, fallback = [fmt(c) for c in within[:limit]], False
+        elif ordered:
+            recent, fallback = [fmt(ordered[0])], True  # latest, outside window
+        else:
+            recent, fallback = [], False
+
+        all_text = "  ".join(adf_to_text(c.get("body")) for c in ordered)
+        return {"recent": recent, "fallback": fallback, "allText": all_text}
 
     def get_transitions(self, key: str) -> list[dict]:
         data = self._request("GET", f"/issue/{key}/transitions")

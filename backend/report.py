@@ -181,6 +181,7 @@ def gather(client: JiraClient, year: int, month: int,
                     "_color": colour,
                     "who": (sf.get("assignee") or {}).get("displayName", "Unassigned"),
                     "updates": updates,
+                    "commentsFallback": cmts.get("fallback", False),
                 })
             stories_out.append({
                 "key": ck,
@@ -320,14 +321,14 @@ def build_pptx(epics: list[dict], year: int, month: int,
         _set_cell(table.cell(r, 6), sub["who"], size=8)
         updates = sub.get("updates") or []
         if updates:
+            fb = " (latest, none in 4 wks)" if sub.get("commentsFallback") else ""
             lines = []
             for u in updates:
                 lines.append((u["text"], False))
-                lines.append(("- {0}, {1}".format(u["author"], u["date"]), False))
+                lines.append(("- {0}, {1}{2}".format(u["author"], u["date"], fb), False))
             _set_cell(table.cell(r, 7), lines, size=7, color=DARK)
         else:
-            _set_cell(table.cell(r, 7),
-                      [("No comments in last 4 weeks", False)], size=7, color=GREY)
+            _set_cell(table.cell(r, 7), [("No comments", False)], size=7, color=GREY)
 
     # Merge epic cells per group
     r = 1

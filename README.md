@@ -328,7 +328,10 @@ Jira allows for that issue type (date fields not on a screen appear read-only):
 - **Summary / Description**
 - **Status** — only the transitions reachable from the current status
 - **Priority**, **Assignee** (type 2+ letters to search), **Due date**
-- **Dates** — Start date, Development End Date, UAT Start/End, Target Completion
+- **Dates** — Start date, Development End Date, UAT Start/End, Target Completion.
+  *(Target Completion is a date **and time** field in Jira; the form takes the
+  date and automatically sets the time to **12:00 noon**, which Jira requires
+  for the change to save — you don't need to enter a time.)*
 - **Time tracking** — Original and Remaining estimate (Jira duration format,
   e.g. `2w 3d 4h`); shown read-only if the field isn't on the issue's screen
 - **Labels** — multi-select dropdown of existing labels (+ a box to add new ones)
@@ -370,17 +373,16 @@ PowerPoint** for a single-slide `.pptx`.
 - **Progress** is the raw Jira workflow status (New, In Progress, Development,
   Completed, Cancelled, Validation, etc.).
 - **Recent comments** shows the **latest 3 comments from the last 4 weeks** of
-  each sub-task (each with author + date), so the report reflects what's
-  happened this month.
+  each sub-task (each with author + date). If a sub-task has **no comments in
+  the last 4 weeks**, its **latest comment** is shown instead (marked *"latest,
+  none in 4 wks"*).
 - **Descriptions** are summarised; bulleted ones combine every point (not just
   the first), and epic descriptions are capped to 40 words.
-- **📧 Email me a copy** — leave the checkbox ticked (in the report window) and
-  clicking **Download PowerPoint** also emails the slide to you automatically
-  through your **local Outlook** (no password needed). It goes to your
-  `JIRA_EMAIL`, or set `JIRA_REPORT_EMAIL` in `.env` to send somewhere else.
-  *(Requires the Outlook desktop app installed and signed in; if it's not
-  available you still get the download, plus a note explaining why the email
-  didn't send.)*
+- **📧 Email PowerPoint** — click this button (next to *Download PowerPoint*) to
+  send the slide to yourself through your **local Outlook** (no password
+  needed). It goes to your `JIRA_EMAIL`, or set `JIRA_REPORT_EMAIL` in `.env` to
+  send somewhere else. *(Requires the Outlook desktop app installed and signed
+  in; a toast confirms it sent, or explains why it couldn't.)*
 
 ### View a colleague's items
 Type a teammate's email in **View user by email** → **View**. The tree and the

@@ -6,7 +6,7 @@ operations used when pushing staged changes.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import requests
@@ -457,6 +457,36 @@ class JiraClient:
             "text": adf_to_text(latest.get("body")),
             "allText": all_text,
         }
+
+    def recent_comments(self, key: str, limit: int = 3,
+                        within_days: int = 28) -> dict:
+        """Up to ``limit`` most-recent comments created within ``within_days``,
+        newest first, plus the combined text of all recent comments (for the
+        delay scan). Default: latest 3 comments within the last 4 weeks.
+        """
+        try:
+            data = self._request(
+                "GET", f"/issue/{key}/comment?maxResults=50&orderBy=-created")
+        except JiraError:
+            return {"recent": [], "allText": ""}
+        comments = data.get("comments", [])  # newest first
+        cutoff = date.today() - timedelta(days=within_days)
+        recent: list[dict] = []
+        for c in comments:
+            created = fields_mod.to_date(c.get("created"))
+            if created is None:
+                continue
+            if created < cutoff:
+                break  # sorted newest-first, so everything after is older too
+            recent.append({
+                "author": (c.get("author") or {}).get("displayName", ""),
+                "date": (c.get("created") or "")[:10],
+                "text": adf_to_text(c.get("body")),
+            })
+            if len(recent) >= limit:
+                break
+        all_text = "  ".join(adf_to_text(c.get("body")) for c in comments)
+        return {"recent": recent, "allText": all_text}
 
     def get_transitions(self, key: str) -> list[dict]:
         data = self._request("GET", f"/issue/{key}/transitions")

@@ -36,9 +36,10 @@ locally and only written to Jira when you review and push**.
 - 📊 **Monthly Report → PowerPoint** — a one-slide table of a month's sub-tasks
   (by Target Completion Date) grouped by epic/story. **Pick any month**
   (prev/next/this-month), and each row shows a **RAG status**, the raw Jira
-  **Progress** status, the **latest comment**, and a **summarised story
-  description** (epics capped to 40 words). Preview in the browser, then download
-  the `.pptx`.
+  **Progress** status, the **latest 3 comments from the last 4 weeks**, and a
+  **summarised story description** (epics capped to 40 words). Preview in the
+  browser, **download** the `.pptx`, and optionally have it **emailed to you**
+  automatically through your local Outlook.
 - 👥 **View any colleague** — enter a teammate's email to see *their* tree and
   generate *their* Monthly Report (read-focused; your own staging/auto-cancel
   never touch their items).
@@ -210,8 +211,21 @@ pip install -r requirements.txt
 
 ### Run the app
 
-With **`(.venv)`** showing in PowerShell (if not, re-run
-`.\.venv\Scripts\Activate.ps1`), type:
+> [!TIP]
+> ### ✨ Easiest way: double-click to start
+> Once your `.env` is set up (above), you can skip all the commands: just
+> **double-click `start-jira-manager.bat`** in the `jira-manager` folder. The
+> **first time** it automatically creates the environment and installs the
+> libraries (so you can even skip the *Install dependencies* step); after that
+> it just launches the app and opens your browser.
+>
+> To start it from your Desktop next time, right-click `start-jira-manager.bat`
+> → **Send to → Desktop (create shortcut)**, then double-click that shortcut
+> whenever you want the app. *(You still need Python installed, and your `.env`
+> filled in once.)*
+
+**Or start it manually from PowerShell.** With **`(.venv)`** showing (if not,
+re-run `.\.venv\Scripts\Activate.ps1`), type:
 
 ```powershell
 python run.py
@@ -335,7 +349,7 @@ applied. Anything that fails stays staged with the error shown.
 Click **📊 Monthly Report**. It collects a month's sub-tasks (those with a
 Target Completion Date in the selected month) under your open epics/stories and
 shows a preview table with columns **Epic · Story/Sub-task · Start · Target end
-· Status · Progress · Responsible · Latest update**. Then **Download
+· Status · Progress · Responsible · Recent comments**. Then **Download
 PowerPoint** for a single-slide `.pptx`.
 
 - **Month selector** — defaults to the current month; use the **◀ / ▶** arrows,
@@ -346,9 +360,18 @@ PowerPoint** for a single-slide `.pptx`.
   comments**), otherwise *On Track* (green).
 - **Progress** is the raw Jira workflow status (New, In Progress, Development,
   Completed, Cancelled, Validation, etc.).
-- **Latest update** is each sub-task's most recent comment (author + date).
+- **Recent comments** shows the **latest 3 comments from the last 4 weeks** of
+  each sub-task (each with author + date), so the report reflects what's
+  happened this month.
 - **Descriptions** are summarised; bulleted ones combine every point (not just
   the first), and epic descriptions are capped to 40 words.
+- **📧 Email me a copy** — leave the checkbox ticked (in the report window) and
+  clicking **Download PowerPoint** also emails the slide to you automatically
+  through your **local Outlook** (no password needed). It goes to your
+  `JIRA_EMAIL`, or set `JIRA_REPORT_EMAIL` in `.env` to send somewhere else.
+  *(Requires the Outlook desktop app installed and signed in; if it's not
+  available you still get the download, plus a note explaining why the email
+  didn't send.)*
 
 ### View a colleague's items
 Type a teammate's email in **View user by email** → **View**. The tree and the
@@ -373,6 +396,7 @@ unusually large batches, and every cancellation is logged to
 | `JIRA_EMAIL` | ✅ | — | The email you log in to Jira with |
 | `JIRA_API_TOKEN` | ✅ | — | API token from id.atlassian.com |
 | `JIRA_PROJECT` | | — | Default project key for new items (e.g. `ISC`) |
+| `JIRA_REPORT_EMAIL` | | your `JIRA_EMAIL` | Where the Monthly Report is emailed |
 | `JIRA_ROOT_TYPES` | | `Epic,Task,Story` | Issue types treated as tree roots |
 | `JIRA_HIDE_DONE` | | `true` | Hide Done/Completed/Cancelled by default |
 | `JIRA_AUTO_CANCEL_STALE_ONHOLD` | | `false` | Auto-cancel stale on-hold items |
@@ -520,6 +544,7 @@ jira-manager/
 │   ├── fields.py       # critical date-field registry + working-day/due logic
 │   ├── staging.py      # local staging store + push (parents-first, colour)
 │   ├── report.py       # Monthly Report: gather data, RAG, PowerPoint render
+│   ├── emailer.py      # email the report via local Outlook (pywin32 COM)
 │   └── main.py         # FastAPI app + JSON API + serves the frontend
 ├── frontend/
 │   ├── index.html
@@ -530,6 +555,7 @@ jira-manager/
 ├── .github/workflows/
 │   └── release.yml     # auto-builds the zip + GitHub Release on a version tag
 ├── build-release.ps1   # build a clean zip (and optionally publish to SharePoint)
+├── start-jira-manager.bat  # one-click launcher (sets up on first run)
 ├── run.py              # launcher (python run.py [port])
 └── requirements.txt
 ```

@@ -163,14 +163,13 @@ def gather(client: JiraClient, year: int, month: int,
                 status_name = (sf.get("status") or {}).get("name", "")
                 cat = ((sf.get("status") or {}).get("statusCategory") or {}).get("key", "")
                 end = sf.get(tgt)
-                comment = client.latest_comment(s["key"])
-                comment_all = comment["allText"] if comment else ""
-                label, colour = rag_status(status_name, cat, end, comment_all, today)
-                if comment and comment["text"].strip():
-                    update = _flatten(comment["text"])
-                    update_meta = f'{comment["author"]}, {comment["date"]}'
-                else:
-                    update, update_meta = "", ""
+                cmts = client.recent_comments(s["key"])
+                label, colour = rag_status(status_name, cat, end, cmts["allText"], today)
+                updates = [
+                    {"text": _flatten(c["text"], 180),
+                     "author": c["author"], "date": c["date"]}
+                    for c in cmts["recent"] if c["text"].strip()
+                ]
                 rows.append({
                     "key": s["key"],
                     "summary": sf.get("summary", ""),
@@ -181,8 +180,7 @@ def gather(client: JiraClient, year: int, month: int,
                     "ragColor": "#%02X%02X%02X" % (colour[0], colour[1], colour[2]),
                     "_color": colour,
                     "who": (sf.get("assignee") or {}).get("displayName", "Unassigned"),
-                    "update": update,
-                    "updateMeta": update_meta,
+                    "updates": updates,
                 })
             stories_out.append({
                 "key": ck,
@@ -209,8 +207,8 @@ def month_label(year: int, month: int) -> str:
 # --- PowerPoint rendering --------------------------------------------------
 
 COLS = ["Epic", "Story / Sub-task", "Start", "Target end", "Status",
-        "Progress", "Responsible", "Latest update"]
-COL_WIDTHS = [1.8, 2.6, 0.8, 0.9, 0.9, 1.0, 1.2, 3.0]  # ~12.2 on 13.33 slide
+        "Progress", "Responsible", "Recent comments (4 wks)"]
+COL_WIDTHS = [1.7, 2.5, 0.8, 0.9, 0.9, 1.0, 1.2, 3.2]  # ~12.2 on 13.33 slide
 
 
 def _set_cell(cell, runs, *, bold=False, size=9, color=DARK, fill=None,
@@ -320,12 +318,16 @@ def build_pptx(epics: list[dict], year: int, month: int,
         _set_cell(table.cell(r, 5), sub.get("status", ""), size=8,
                   align=PP_ALIGN.CENTER)
         _set_cell(table.cell(r, 6), sub["who"], size=8)
-        if sub.get("update"):
-            _set_cell(table.cell(r, 7),
-                      [(sub["update"], False),
-                       (f'— {sub["updateMeta"]}', False)], size=8, color=DARK)
+        updates = sub.get("updates") or []
+        if updates:
+            lines = []
+            for u in updates:
+                lines.append((u["text"], False))
+                lines.append(("- {0}, {1}".format(u["author"], u["date"]), False))
+            _set_cell(table.cell(r, 7), lines, size=7, color=DARK)
         else:
-            _set_cell(table.cell(r, 7), [("No comments", False)], size=8, color=GREY)
+            _set_cell(table.cell(r, 7),
+                      [("No comments in last 4 weeks", False)], size=7, color=GREY)
 
     # Merge epic cells per group
     r = 1

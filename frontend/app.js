@@ -821,9 +821,11 @@ async function openReport(year, month) {
             + (st.description ? `<div class="muted rpt-desc">${escapeHtml(st.description)}</div>` : "")
             + `<br>`
           : "";
-        const updateCell = s.update
-          ? `${escapeHtml(s.update)}<div class="muted rpt-meta">— ${escapeHtml(s.updateMeta)}</div>`
-          : `<span class="muted">No comments</span>`;
+        const updateCell = (s.updates && s.updates.length)
+          ? s.updates.map((u) =>
+              `<div class="rpt-cmt">${escapeHtml(u.text)}` +
+              `<div class="muted rpt-meta">— ${escapeHtml(u.author)}, ${u.date}</div></div>`).join("")
+          : `<span class="muted">No comments in last 4 weeks</span>`;
         rowsHtml += `<tr>
           ${!epShown ? `<td rowspan="${span}" class="rpt-epic"><b>${ep.key}: ${escapeHtml(ep.summary)}</b>${ep.description ? `<div class="muted">${escapeHtml(ep.description)}</div>` : ""}</td>` : ""}
           <td>${storyHeader}↳ ${s.key}: ${escapeHtml(s.summary)}</td>
@@ -840,7 +842,7 @@ async function openReport(year, month) {
 
   const body = count ? `
     <table class="rpt-table">
-      <thead><tr><th>Epic</th><th>Story / Sub-task</th><th>Start</th><th>Target end</th><th>Status</th><th>Progress</th><th>Responsible</th><th>Latest update</th></tr></thead>
+      <thead><tr><th>Epic</th><th>Story / Sub-task</th><th>Start</th><th>Target end</th><th>Status</th><th>Progress</th><th>Responsible</th><th>Recent comments (4 wks)</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>` : `<p class="muted">No sub-tasks with a Target Completion Date in ${data.month}.</p>`;
 
@@ -856,6 +858,7 @@ async function openReport(year, month) {
     <p class="muted">For <b>${escapeHtml(data.owner || "me")}</b> · ${count} sub-task(s) with a target end in ${data.month}, across ${data.epics.length} epic(s).</p>
     <div class="rpt-wrap">${body}</div>
     <div class="modal-actions">
+      <label class="toggle-label"><input type="checkbox" id="rpt-email" checked> Email me a copy</label>
       <button onclick="closeModalBtn()">Close</button>
       <button class="success" onclick="downloadReport(${data.year}, ${data.monthNum})">⬇ Download PowerPoint</button>
     </div>`);
@@ -881,8 +884,24 @@ function downloadReport(year, month) {
   const emailParam = viewedEmail ? `&email=${encodeURIComponent(viewedEmail)}` : "";
   window.location.href = `/api/report/pptx?year=${year}&month=${month}${emailParam}`;
   toast("Downloading PowerPoint…", "success");
+  const chk = document.getElementById("rpt-email");
+  if (chk && chk.checked) emailReport(year, month);
 }
 window.downloadReport = downloadReport;
+
+async function emailReport(year, month) {
+  const emailParam = viewedEmail ? `&email=${encodeURIComponent(viewedEmail)}` : "";
+  toast("Emailing the report…");
+  try {
+    const r = await api(`/api/report/email?year=${year}&month=${month}${emailParam}`,
+                        { method: "POST" });
+    if (r.sent) toast(`Emailed to ${r.to}`, "success");
+    else toast(`Couldn't email: ${r.error}`, "error");
+  } catch (e) {
+    toast("Email failed: " + e.message, "error");
+  }
+}
+window.emailReport = emailReport;
 
 // ---------- wire up ----------
 $("#btn-new").onclick = newItemFlow;

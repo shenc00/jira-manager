@@ -13,6 +13,9 @@ JIRA_EMAIL = os.environ.get("JIRA_EMAIL", "").strip()
 JIRA_API_TOKEN = os.environ.get("JIRA_API_TOKEN", "").strip()
 DEFAULT_PROJECT = os.environ.get("JIRA_PROJECT", "").strip()
 
+# Address the Monthly Report is emailed to (defaults to your own Jira email).
+REPORT_EMAIL = os.environ.get("JIRA_REPORT_EMAIL", "").strip() or JIRA_EMAIL
+
 ROOT_TYPES = [
     t.strip()
     for t in os.environ.get("JIRA_ROOT_TYPES", "Epic,Task,Story").split(",")

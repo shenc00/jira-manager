@@ -860,7 +860,6 @@ async function openReport(year, month) {
     <div class="rpt-wrap">${body}</div>
     <div class="modal-actions">
       <button onclick="closeModalBtn()">Close</button>
-      <button onclick="emailReport(${data.year}, ${data.monthNum})">📧 Email PowerPoint</button>
       <button class="success" onclick="downloadReport(${data.year}, ${data.monthNum})">⬇ Download PowerPoint</button>
     </div>`);
 
@@ -887,22 +886,6 @@ function downloadReport(year, month) {
   toast("Downloading PowerPoint…", "success");
 }
 window.downloadReport = downloadReport;
-
-async function emailReport(year, month) {
-  // Sends the .pptx to your Jira email (or JIRA_REPORT_EMAIL) via local Outlook.
-  const emailParam = viewedEmail ? `&email=${encodeURIComponent(viewedEmail)}` : "";
-  toast("Emailing the report…");
-  try {
-    const r = await api(`/api/report/email?year=${year}&month=${month}${emailParam}`,
-                        { method: "POST" });
-    if (r.displayed) toast(`Opened in Outlook (from ${r.from || "you"}) — click Send to deliver to ${r.to}`, "success");
-    else if (r.sent) toast(`Emailed to ${r.to}${r.from ? " from " + r.from : ""}`, "success");
-    else toast(`Couldn't email: ${r.error}`, "error");
-  } catch (e) {
-    toast("Email failed: " + e.message, "error");
-  }
-}
-window.emailReport = emailReport;
 
 // ---------- wire up ----------
 $("#btn-new").onclick = newItemFlow;

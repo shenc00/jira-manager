@@ -38,8 +38,7 @@ locally and only written to Jira when you review and push**.
   (prev/next/this-month), and each row shows a **RAG status**, the raw Jira
   **Progress** status, the **latest 3 comments from the last 4 weeks** (or the
   latest comment if none recently), and a **summarised story description** (epics
-  capped to 40 words). Preview in the browser, **download** the `.pptx`, or
-  **📧 Email PowerPoint** to send it to yourself through your local Outlook.
+  capped to 40 words). Preview in the browser, then **download** the `.pptx`.
 - 👥 **View any colleague** — enter a teammate's email to see *their* tree and
   generate *their* Monthly Report (read-focused; your own staging/auto-cancel
   never touch their items).
@@ -378,17 +377,6 @@ PowerPoint** for a single-slide `.pptx`.
   none in 4 wks"*).
 - **Descriptions** are summarised; bulleted ones combine every point (not just
   the first), and epic descriptions are capped to 40 words.
-- **📧 Email PowerPoint** — click this button (next to *Download PowerPoint*).
-  By default it **opens the email in your local Outlook** with the recipient and
-  the PowerPoint attachment already filled in — you just click **Send**. **The
-  sender is you** (your default Outlook account); it's addressed to your
-  `JIRA_EMAIL`, or set `JIRA_REPORT_EMAIL` in `.env` for a different recipient.
-  - Why open-then-send rather than fully automatic? Silent sending via Outlook
-    often **lands in the Outbox and never goes out** if Outlook isn't actively
-    running — so "it said sent" but nothing arrives. Opening the draft is
-    reliable and lets you see it leave. To switch to fully silent sending, set
-    `JIRA_EMAIL_MODE=send` in `.env` (then check your **Outbox/Sent/Junk** if it
-    doesn't arrive, and keep Outlook open).
 
 ### View a colleague's items
 Type a teammate's email in **View user by email** → **View**. The tree and the
@@ -413,7 +401,6 @@ unusually large batches, and every cancellation is logged to
 | `JIRA_EMAIL` | ✅ | — | The email you log in to Jira with |
 | `JIRA_API_TOKEN` | ✅ | — | API token from id.atlassian.com |
 | `JIRA_PROJECT` | | — | Default project key for new items (e.g. `ISC`) |
-| `JIRA_REPORT_EMAIL` | | your `JIRA_EMAIL` | Where the Monthly Report is emailed |
 | `JIRA_ROOT_TYPES` | | `Epic,Task,Story` | Issue types treated as tree roots |
 | `JIRA_HIDE_DONE` | | `true` | Hide Done/Completed/Cancelled by default |
 | `JIRA_AUTO_CANCEL_STALE_ONHOLD` | | `false` | Auto-cancel stale on-hold items |
@@ -574,7 +561,6 @@ jira-manager/
 │   ├── fields.py       # critical date-field registry + working-day/due logic
 │   ├── staging.py      # local staging store + push (parents-first, colour)
 │   ├── report.py       # Monthly Report: gather data, RAG, PowerPoint render
-│   ├── emailer.py      # email the report via local Outlook (pywin32 COM)
 │   └── main.py         # FastAPI app + JSON API + serves the frontend
 ├── frontend/
 │   ├── index.html

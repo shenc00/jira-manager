@@ -16,6 +16,11 @@ DEFAULT_PROJECT = os.environ.get("JIRA_PROJECT", "").strip()
 # Address the Monthly Report is emailed to (defaults to your own Jira email).
 REPORT_EMAIL = os.environ.get("JIRA_REPORT_EMAIL", "").strip() or JIRA_EMAIL
 
+# How the report email is delivered via Outlook:
+#   "send"    - send it silently (default)
+#   "display" - open the draft in Outlook so you can review and click Send
+EMAIL_MODE = os.environ.get("JIRA_EMAIL_MODE", "send").strip().lower()
+
 ROOT_TYPES = [
     t.strip()
     for t in os.environ.get("JIRA_ROOT_TYPES", "Epic,Task,Story").split(",")

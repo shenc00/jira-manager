@@ -895,7 +895,8 @@ async function emailReport(year, month) {
   try {
     const r = await api(`/api/report/email?year=${year}&month=${month}${emailParam}`,
                         { method: "POST" });
-    if (r.sent) toast(`Emailed to ${r.to}`, "success");
+    if (r.displayed) toast(`Opened in Outlook (from ${r.from || "you"}) — click Send to deliver to ${r.to}`, "success");
+    else if (r.sent) toast(`Emailed to ${r.to}${r.from ? " from " + r.from : ""}`, "success");
     else toast(`Couldn't email: ${r.error}`, "error");
   } catch (e) {
     toast("Email failed: " + e.message, "error");

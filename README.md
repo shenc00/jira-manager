@@ -379,10 +379,16 @@ PowerPoint** for a single-slide `.pptx`.
 - **Descriptions** are summarised; bulleted ones combine every point (not just
   the first), and epic descriptions are capped to 40 words.
 - **📧 Email PowerPoint** — click this button (next to *Download PowerPoint*) to
-  send the slide to yourself through your **local Outlook** (no password
-  needed). It goes to your `JIRA_EMAIL`, or set `JIRA_REPORT_EMAIL` in `.env` to
-  send somewhere else. *(Requires the Outlook desktop app installed and signed
-  in; a toast confirms it sent, or explains why it couldn't.)*
+  send the slide to yourself through your **local Outlook**. **The sender is you**
+  (your default Outlook account); it goes to your `JIRA_EMAIL`, or set
+  `JIRA_REPORT_EMAIL` in `.env` for a different recipient. A toast confirms who
+  it was sent from/to, or explains why it couldn't. *(Requires the Outlook
+  desktop app installed and signed in.)*
+  - **Didn't arrive?** Set `JIRA_EMAIL_MODE=display` in `.env`. Instead of
+    sending silently, the button then **opens the email in Outlook** (recipient
+    and attachment pre-filled) so you can see it and click **Send** yourself —
+    the most reliable option when corporate policy blocks programmatic sending.
+    Also check your **Outbox / Junk** and that Outlook is open and signed in.
 
 ### View a colleague's items
 Type a teammate's email in **View user by email** → **View**. The tree and the

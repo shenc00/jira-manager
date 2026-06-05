@@ -25,6 +25,11 @@ if not exist ".venv\Scripts\activate.bat" (
     call ".venv\Scripts\activate.bat"
     python -m pip install --upgrade pip
     pip install -r requirements.txt
+    if errorlevel 1 (
+        echo.
+        echo Install hit a network/SSL issue - retrying with relaxed settings...
+        pip install -r requirements.txt --trusted-host pypi.org --trusted-host files.pythonhosted.org
+    )
 ) else (
     call ".venv\Scripts\activate.bat"
 )

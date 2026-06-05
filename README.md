@@ -449,6 +449,15 @@ Each user only ever sees and does what their Jira permissions allow.
   certificate store (via `truststore`), which fixes most cases. If it persists,
   point `JIRA_CA_BUNDLE` at your corporate root-CA `.pem`, or as a last resort
   set `JIRA_VERIFY_SSL=false`.
+- **`ImportError: cannot import name 'BaseModel' from 'pydantic'`** (or similar
+  for another library) — a previous `pip install` was interrupted (often a
+  blocked download on a corporate network), leaving a half-installed library.
+  **The launcher now repairs this automatically** on the next start. If it ever
+  can't, fix it manually in PowerShell (with `.venv` active):
+  ```powershell
+  pip install --force-reinstall --no-cache-dir -r requirements.txt
+  ```
+  If downloads are blocked, add `--trusted-host pypi.org --trusted-host files.pythonhosted.org`.
 - **Port already in use** — run on another port: `python run.py 9000`.
 - **A colleague's view is empty** — they may own only sub-tasks (under other
   people's stories) and no epics/stories of their own; their sub-tasks then show

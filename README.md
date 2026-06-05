@@ -248,6 +248,11 @@ Your browser opens automatically.
   (Running `pip install -r requirements.txt` installs it too.) If the page ever
   can't reach the server, a banner appears that finds the right port and gives
   you a link to click.
+- **Page says “waiting for 127.0.0.1…” or looks blank right after starting?**
+  This is normal — the browser opens a split-second before the server has
+  finished starting (you'll notice it most when you **restart** the app). Just
+  **refresh the page once** (press **F5** or **Ctrl+R**) and it loads fine. Give
+  the black window a couple of seconds to finish starting first.
 - **“python is not recognised”?** Python isn't installed or wasn't added to
   PATH — go back to **Install Python** above.
 

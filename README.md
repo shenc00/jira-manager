@@ -15,7 +15,8 @@ locally and only written to Jira when you review and push**.
 
 - 🌳 **Work tree** — your epics → stories → sub-tasks, correctly nested. Every
   sub-task assigned to you appears even when its parent epic/story belongs to
-  someone else (the parent is shown as context). Type-coloured, with status.
+  someone else **or is already completed** — the epic/story is shown as context
+  so your sub-task always sits in its real place. Type-coloured, with status.
 - 👁️ **Hide completed** — finished work (Done / Completed / Cancelled) is hidden
   by default; a **Show completed** toggle reveals it.
 - ⏰ **Due highlighting** — items within **3 working days** of their Target
@@ -358,10 +359,15 @@ applied. Anything that fails stays staged with the error shown.
 
 ### Monthly Report (PowerPoint)
 Click **📊 Monthly Report**. It collects a month's sub-tasks (those with a
-Target Completion Date in the selected month) under your open epics/stories and
-shows a preview table with columns **Epic · Story/Sub-task · Start · Target end
-· Status · Progress · Responsible · Recent comments**. Then **Download
-PowerPoint** for a single-slide `.pptx`.
+Target Completion Date in the selected month) and shows a preview table with
+columns **Epic · Story/Sub-task · Start · Target end · Status · Progress ·
+Responsible · Recent comments**. Then **Download PowerPoint** for a single-slide
+`.pptx`.
+
+A story (and its epic) is included when **either** the epic is assigned to you
+**or** you own a sub-task under that story — so **epics and stories that aren't
+assigned to you still appear**, as long as you have an in-month sub-task beneath
+them. (Sub-tasks whose parent has no epic are grouped under *"(No epic)"*.)
 
 - **Month selector** — defaults to the current month; use the **◀ / ▶** arrows,
   the month picker, or **This month** to view any past or future month. The

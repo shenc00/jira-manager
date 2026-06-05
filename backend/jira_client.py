@@ -318,6 +318,9 @@ class JiraClient:
             frontier = nxt
 
         # Pull in missing ancestors so items nest under their real parents.
+        # Ancestors are included even when they're not assigned to the user and
+        # even when completed - they're shown as context for an item you DO own
+        # (e.g. your open sub-task under someone else's / a closed epic-story).
         for _ in range(6):  # safety bound on hierarchy depth
             missing = {parent_of[k] for k in list(nodes)
                        if k in parent_of and parent_of[k] not in nodes}
@@ -325,8 +328,6 @@ class JiraClient:
                 break
             keys = ", ".join(f'"{k}"' for k in missing)
             for issue in self.search(f"key in ({keys})"):
-                if hide_done and self._is_done(issue):
-                    continue  # don't resurrect a completed ancestor
                 add(issue)
 
         # Link the forest.

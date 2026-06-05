@@ -827,8 +827,9 @@ async function openReport(year, month) {
               `<div class="rpt-cmt">${escapeHtml(u.text)}` +
               `<div class="muted rpt-meta">— ${escapeHtml(u.author)}, ${u.date}${fbNote}</div></div>`).join("")
           : `<span class="muted">No comments</span>`;
+        const epTitle = ep.key ? `${ep.key}: ${escapeHtml(ep.summary)}` : escapeHtml(ep.summary);
         rowsHtml += `<tr>
-          ${!epShown ? `<td rowspan="${span}" class="rpt-epic"><b>${ep.key}: ${escapeHtml(ep.summary)}</b>${ep.description ? `<div class="muted">${escapeHtml(ep.description)}</div>` : ""}</td>` : ""}
+          ${!epShown ? `<td rowspan="${span}" class="rpt-epic"><b>${epTitle}</b>${ep.description ? `<div class="muted">${escapeHtml(ep.description)}</div>` : ""}</td>` : ""}
           <td>${storyHeader}↳ ${s.key}: ${escapeHtml(s.summary)}</td>
           <td>${s.start}</td><td>${s.end}</td>
           <td><span class="rag" style="background:${s.ragColor}">${s.rag}</span></td>

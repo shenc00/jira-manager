@@ -117,87 +117,141 @@ def _in_month(value, year: int, month: int) -> bool:
     return bool(d and d.year == year and d.month == month)
 
 
+def _build_row(client: JiraClient, s: dict, tgt: str, today) -> dict:
+    """Build one sub-task row (RAG status + recent comments)."""
+    sf = s["fields"]
+    status_name = (sf.get("status") or {}).get("name", "")
+    cat = ((sf.get("status") or {}).get("statusCategory") or {}).get("key", "")
+    end = sf.get(tgt)
+    cmts = client.recent_comments(s["key"])
+    label, colour = rag_status(status_name, cat, end, cmts["allText"], today)
+    updates = [
+        {"text": _flatten(c["text"], 180), "author": c["author"], "date": c["date"]}
+        for c in cmts["recent"] if c["text"].strip()
+    ]
+    return {
+        "key": s["key"],
+        "summary": sf.get("summary", ""),
+        "start": str(sf.get(START_DATE_FIELD) or "")[:10] or "—",
+        "end": str(end or "")[:10] or "—",
+        "status": status_name,
+        "rag": label,
+        "ragColor": "#%02X%02X%02X" % (colour[0], colour[1], colour[2]),
+        "_color": colour,
+        "who": (sf.get("assignee") or {}).get("displayName", "Unassigned"),
+        "updates": updates,
+        "commentsFallback": cmts.get("fallback", False),
+    }
+
+
 def gather(client: JiraClient, year: int, month: int,
            assignee: str | None = None) -> list[dict]:
     """Collect epics -> stories -> in-month sub-tasks with RAG status.
 
+    A story (and its epic) is included if EITHER the epic is assigned to the
+    user OR the story holds a sub-task assigned to the user. So epics/stories
+    that aren't assigned to the user still appear, as long as the user owns a
+    sub-task under them with a Target Completion Date in the selected month.
     ``assignee`` is an accountId; defaults to the current user.
     """
     today = date.today()
     tgt = fields_mod.TARGET_COMPLETION_FIELD
     who = "currentUser()" if not assignee else f'"{assignee}"'
-    epics = client.search(
-        f"assignee = {who} AND issuetype = Epic AND statusCategory != Done "
-        "ORDER BY summary",
-        fields=["summary", "description", "status"],
-    )
-    result: list[dict] = []
-    for e in epics:
-        ek, ef = e["key"], e["fields"]
-        stories_out = []
-        children = client.search(
-            f'parent = "{ek}" ORDER BY summary',
-            fields=["summary", "issuetype", "status", "description"],
-        )
-        for ch in children:
-            cf = ch["fields"]
-            if (cf.get("issuetype") or {}).get("subtask"):
-                continue
-            ck = ch["key"]
-            subs = client.search(
-                f'parent = "{ck}" ORDER BY summary',
-                fields=["summary", "status", "assignee", START_DATE_FIELD, tgt],
-            )
-            month_subs = [s for s in subs if _in_month(s["fields"].get(tgt), year, month)]
-            if not month_subs:
-                continue
-            total = len(subs)
-            done = sum(
-                1 for s in subs
-                if ((s["fields"].get("status") or {}).get("statusCategory") or {})
-                .get("key") == "done"
-            )
-            rows = []
-            for s in month_subs:
-                sf = s["fields"]
-                status_name = (sf.get("status") or {}).get("name", "")
-                cat = ((sf.get("status") or {}).get("statusCategory") or {}).get("key", "")
-                end = sf.get(tgt)
-                cmts = client.recent_comments(s["key"])
-                label, colour = rag_status(status_name, cat, end, cmts["allText"], today)
-                updates = [
-                    {"text": _flatten(c["text"], 180),
-                     "author": c["author"], "date": c["date"]}
-                    for c in cmts["recent"] if c["text"].strip()
-                ]
-                rows.append({
-                    "key": s["key"],
-                    "summary": sf.get("summary", ""),
-                    "start": str(sf.get(START_DATE_FIELD) or "")[:10] or "—",
-                    "end": str(end or "")[:10] or "—",
-                    "status": status_name,
-                    "rag": label,
-                    "ragColor": "#%02X%02X%02X" % (colour[0], colour[1], colour[2]),
-                    "_color": colour,
-                    "who": (sf.get("assignee") or {}).get("displayName", "Unassigned"),
-                    "updates": updates,
-                    "commentsFallback": cmts.get("fallback", False),
-                })
-            stories_out.append({
-                "key": ck,
-                "summary": cf.get("summary", ""),
-                "description": _summarize_description(adf_to_text(cf.get("description"))),
-                "progress": f"{done}/{total} sub-tasks done",
-                "subs": rows,
-            })
-        if stories_out:
-            result.append({
-                "key": ek,
+
+    def chunks(seq, n=50):
+        for i in range(0, len(seq), n):
+            yield seq[i:i + n]
+
+    # 1. Relevant "story" (standard-issue) keys.
+    story_keys: set[str] = set()
+
+    #    (a) stories under epics assigned to the user
+    epics_mine = client.search(
+        f"assignee = {who} AND issuetype = Epic AND statusCategory != Done",
+        fields=["summary"])
+    for batch in chunks([e["key"] for e in epics_mine]):
+        keys = ", ".join(f'"{k}"' for k in batch)
+        for ch in client.search(f"parent in ({keys})", fields=["issuetype"]):
+            if not (ch["fields"].get("issuetype") or {}).get("subtask"):
+                story_keys.add(ch["key"])
+
+    #    (b) stories that hold a sub-task assigned to the user (with in-month target)
+    for s in client.search(f"assignee = {who} AND parent is not EMPTY",
+                           fields=["parent", "issuetype", tgt]):
+        if not (s["fields"].get("issuetype") or {}).get("subtask"):
+            continue
+        if _in_month(s["fields"].get(tgt), year, month):
+            parent = (s["fields"].get("parent") or {}).get("key")
+            if parent:
+                story_keys.add(parent)
+
+    if not story_keys:
+        return []
+
+    # 2. Story details (summary, description, parent epic).
+    stories: dict[str, dict] = {}
+    for batch in chunks(list(story_keys)):
+        keys = ", ".join(f'"{k}"' for k in batch)
+        for st in client.search(
+                f"key in ({keys})",
+                fields=["summary", "description", "parent", "issuetype"]):
+            if not (st["fields"].get("issuetype") or {}).get("subtask"):
+                stories[st["key"]] = st
+
+    # 3. Epic details for the epics those stories belong to.
+    epic_keys = {(st["fields"].get("parent") or {}).get("key")
+                 for st in stories.values()}
+    epic_keys.discard(None)
+    epics: dict[str, dict] = {}
+    for batch in chunks(list(epic_keys)):
+        keys = ", ".join(f'"{k}"' for k in batch)
+        for e in client.search(f"key in ({keys})",
+                               fields=["summary", "description"]):
+            epics[e["key"]] = e
+
+    # 4. Build epic -> story -> in-month sub-task rows.
+    grouped: dict[str, dict] = {}
+    for skey, st in stories.items():
+        sf = st["fields"]
+        subs = client.search(
+            f'parent = "{skey}" ORDER BY summary',
+            fields=["summary", "status", "assignee", START_DATE_FIELD, tgt])
+        month_subs = [s for s in subs if _in_month(s["fields"].get(tgt), year, month)]
+        if not month_subs:
+            continue
+        total = len(subs)
+        done = sum(1 for s in subs
+                   if ((s["fields"].get("status") or {}).get("statusCategory") or {})
+                   .get("key") == "done")
+        story_out = {
+            "key": skey,
+            "summary": sf.get("summary", ""),
+            "description": _summarize_description(adf_to_text(sf.get("description"))),
+            "progress": f"{done}/{total} sub-tasks done",
+            "subs": [_build_row(client, s, tgt, today) for s in month_subs],
+        }
+
+        ep_key = (sf.get("parent") or {}).get("key")
+        if ep_key and ep_key in epics:
+            ef = epics[ep_key]["fields"]
+            grp = grouped.setdefault(ep_key, {
+                "key": ep_key,
                 "summary": ef.get("summary", ""),
                 "description": _summarize_description(
                     adf_to_text(ef.get("description")), max_words=40),
-                "stories": stories_out,
+                "stories": [],
             })
+        else:
+            grp = grouped.setdefault("", {
+                "key": "", "summary": "(No epic)", "description": "",
+                "stories": [],
+            })
+        grp["stories"].append(story_out)
+
+    result = list(grouped.values())
+    for ep in result:
+        ep["stories"].sort(key=lambda s: s["key"])
+    result.sort(key=lambda e: e["key"])
     return result
 
 
@@ -297,11 +351,11 @@ def build_pptx(epics: list[dict], year: int, month: int,
         ep, st, sub = row["epic"], row["story"], row["sub"]
         # Epic cell (filled on first row, merged across span)
         if row["e_first"]:
-            _set_cell(table.cell(r, 0),
-                      [(f'{ep["key"]}: {ep["summary"]}', True),
-                       (ep["description"], False)] if ep["description"]
-                      else [(f'{ep["key"]}: {ep["summary"]}', True)],
-                      size=9)
+            etitle = f'{ep["key"]}: {ep["summary"]}' if ep["key"] else ep["summary"]
+            lines = [(etitle, True)]
+            if ep["description"]:
+                lines.append((ep["description"], False))
+            _set_cell(table.cell(r, 0), lines, size=9)
         else:
             _set_cell(table.cell(r, 0), "", size=9)
         # Story / sub-task cell: story header (first row of story) + sub-task line

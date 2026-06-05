@@ -36,10 +36,10 @@ locally and only written to Jira when you review and push**.
 - 📊 **Monthly Report → PowerPoint** — a one-slide table of a month's sub-tasks
   (by Target Completion Date) grouped by epic/story. **Pick any month**
   (prev/next/this-month), and each row shows a **RAG status**, the raw Jira
-  **Progress** status, the **latest 3 comments from the last 4 weeks**, and a
-  **summarised story description** (epics capped to 40 words). Preview in the
-  browser, **download** the `.pptx`, and optionally have it **emailed to you**
-  automatically through your local Outlook.
+  **Progress** status, the **latest 3 comments from the last 4 weeks** (or the
+  latest comment if none recently), and a **summarised story description** (epics
+  capped to 40 words). Preview in the browser, **download** the `.pptx`, or
+  **📧 Email PowerPoint** to send it to yourself through your local Outlook.
 - 👥 **View any colleague** — enter a teammate's email to see *their* tree and
   generate *their* Monthly Report (read-focused; your own staging/auto-cancel
   never touch their items).
@@ -448,6 +448,10 @@ Each user only ever sees and does what their Jira permissions allow.
   undo your other edits; if Jira rejects it you get a **warning** on push (not a
   failure). Epic colour is applied best-effort after creating an epic; if your
   project doesn't expose it, the epic is still created with a warning.
+- **Target Completion Date** is a date **and time** field in Jira and is
+  required for a change to save. The form captures only the date and
+  automatically sets the time to **12:00 (noon)** — you don't enter a time, and
+  midday avoids any timezone shift to the previous/next day.
 - **Sub-tasks require a parent** (enforced by the form).
 - The hierarchy uses the modern Cloud `parent` field.
 - Your `.env`, `data/staging.json` and `data/auto_cancel.log` are git-ignored —

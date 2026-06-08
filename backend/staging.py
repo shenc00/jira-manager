@@ -219,6 +219,17 @@ class StagingStore:
                 warnings.append(
                     f"{key}: could not set due date \u2014 likely not on the "
                     f"issue's edit screen in Jira ({exc})")
+        # Target Completion Date is a datetime custom field that often isn't on
+        # the create screen, so apply it as its own update too.
+        if data.get("targetCompletion"):
+            field_id = fields_mod.TARGET_COMPLETION_FIELD
+            value = fields_mod.format_custom(field_id, data["targetCompletion"])
+            try:
+                client.update_issue(key, {field_id: value})
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(
+                    f"{key}: could not set target completion date \u2014 likely "
+                    f"not on the issue's edit screen in Jira ({exc})")
         if data.get("comment"):
             client.add_comment(key, data["comment"])
         if data.get("status"):

@@ -127,7 +127,13 @@ function confirmPrompt(title, message, yesLabel = "Yes", noLabel = "No") {
 
 // ---------- load + render tree ----------
 async function loadMeta() {
-  try { META = await api("/api/meta"); } catch (e) { /* config maybe missing */ }
+  try {
+    META = await api("/api/meta");
+  } catch (e) {
+    // Leave whatever we had before and let the user know — an empty META is
+    // the usual cause of an empty Project dropdown on the create form.
+    toast("Couldn't load projects: " + e.message, "error");
+  }
   try { ALL_LABELS = (await api("/api/meta/labels")).labels || []; } catch (e) { ALL_LABELS = []; }
 }
 
@@ -326,10 +332,7 @@ function renderIssueDetail(issue) {
       ${field("Status", `<select id="f-status">${statusOpts}</select>`)}
       ${field("Priority", `<select id="f-priority">${priOpts}</select>`)}
     </div>
-    <div class="row">
-      ${field("Assignee", assigneeInput("f-assignee", issue.assignee && issue.assignee.displayName, issue.project))}
-      ${field("Due date", `<input type="date" id="f-duedate" value="${issue.duedate || ""}">`)}
-    </div>
+    ${field("Assignee", assigneeInput("f-assignee", issue.assignee && issue.assignee.displayName, issue.project))}
 
     ${criticalFieldsHtml(issue.critical)}
 
@@ -467,7 +470,6 @@ function collectChanges() {
     description: document.getElementById("f-desc").value,
     status: document.getElementById("f-status").value || null,
     priority: document.getElementById("f-priority").value || null,
-    duedate: document.getElementById("f-duedate").value || null,
     labels: labelsChanged ? labels : null,
     comment: document.getElementById("f-comment").value.trim() || null,
     assigneeId: resolveAssignee("f-assignee"),
@@ -512,7 +514,17 @@ function newItemFlow() {
 window.closeModalBtn = closeModal;
 
 async function openCreateForm(category, parentRef) {
+  // The Project list comes from /api/meta, loaded at startup. If that load
+  // failed (transient Jira/network error), META.projects is empty and the
+  // dropdown would have nothing to pick — retry the load before rendering.
+  if (!META.projects || !META.projects.length) {
+    await loadMeta();
+  }
   const projects = META.projects || [];
+  if (!projects.length) {
+    toast("No projects available — check your Jira connection and config.", "error");
+    return;
+  }
   const defProj = META.defaultProject || (projects[0] && projects[0].key) || "";
   const projOpts = projects.map((p) =>
     `<option value="${p.key}" ${p.key === defProj ? "selected" : ""}>${p.key} — ${p.name}</option>`).join("");
@@ -528,10 +540,17 @@ async function openCreateForm(category, parentRef) {
                `<input type="text" id="c-parent" placeholder="e.g. ISC-123">`))
       : `<input type="hidden" id="c-parent" value="${parentRef}">`}
     ${field("Summary (required)", `<input type="text" id="c-summary">`)}
-    ${field("Description", `<textarea id="c-desc"></textarea>`)}
+    ${field("Description",
+        `<textarea id="c-desc"></textarea>
+         <div class="desc-upload">
+           <input type="file" id="c-desc-file" style="display:none"
+                  accept=".txt,.md,.markdown,.log,.csv,.json,text/plain">
+           <button type="button" id="c-desc-upload-btn" class="link-btn">📎 Upload a file…</button>
+           <span id="c-desc-file-name" class="muted"></span>
+         </div>`)}
     <div class="row">
       ${field("Priority", `<select id="c-priority"><option value="">—</option>${(META.priorities||[]).map(p=>`<option>${p.name}</option>`).join("")}</select>`)}
-      ${field("Due date", `<input type="date" id="c-duedate">`)}
+      ${field("Target completion date", `<input type="date" id="c-target">`)}
     </div>
     ${isEpic ? `<div class="row">
         ${field("Initial status", `<input type="text" id="c-status" value="In Progress">`)}
@@ -580,7 +599,40 @@ async function openCreateForm(category, parentRef) {
   projSel.onchange = loadTypes;
   wireAssignee("c-assignee", projSel.value);
 
+  wireDescUpload();
+
   document.getElementById("c-submit").onclick = () => submitCreate(category, parentRef);
+}
+
+// Let the user fill the Description from a text file. Reads the file in the
+// browser (no upload to the server) and drops its contents into the textarea.
+function wireDescUpload() {
+  const btn = document.getElementById("c-desc-upload-btn");
+  const input = document.getElementById("c-desc-file");
+  const nameSpan = document.getElementById("c-desc-file-name");
+  const desc = document.getElementById("c-desc");
+  if (!btn || !input || !desc) return;
+
+  const MAX_BYTES = 1024 * 1024; // 1 MB — Jira descriptions aren't huge
+  btn.onclick = () => input.click();
+  input.onchange = () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (file.size > MAX_BYTES) {
+      toast("File is too large (max 1 MB for a description).", "error");
+      input.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || "");
+      // If there's already text, append; otherwise replace.
+      desc.value = desc.value.trim() ? `${desc.value.trim()}\n\n${text}` : text;
+      if (nameSpan) nameSpan.textContent = `Loaded “${file.name}”.`;
+    };
+    reader.onerror = () => toast("Couldn't read that file.", "error");
+    reader.readAsText(file);
+  };
 }
 
 async function submitCreate(category, parentRef) {
@@ -604,7 +656,7 @@ async function submitCreate(category, parentRef) {
     description: document.getElementById("c-desc").value || null,
     parentRef: parent || null,
     priority: document.getElementById("c-priority").value || null,
-    duedate: document.getElementById("c-duedate").value || null,
+    targetCompletion: (document.getElementById("c-target") || {}).value || null,
     labels: labels.length ? labels : null,
     status: status || null,
     epicColor: category === "Epic" ? epicColor : null,

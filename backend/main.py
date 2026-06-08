@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -83,6 +83,7 @@ class CreateBody(BaseModel):
     priority: str | None = None
     labels: list[str] | None = None
     duedate: str | None = None
+    targetCompletion: str | None = None
     status: str | None = None
     comment: str | None = None
     custom: dict[str, Any] | None = None
@@ -240,7 +241,12 @@ def get_create_fields(project: str, issuetype: str):
     except JiraError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return {
-        "critical": [f for f in fields_module.CRITICAL_FIELDS if f["id"] in ids],
+        # Target Completion Date has its own dedicated input on the create
+        # form, so leave it out of the dynamic list to avoid showing it twice.
+        "critical": [
+            f for f in fields_module.CRITICAL_FIELDS
+            if f["id"] in ids and f["id"] != fields_module.TARGET_COMPLETION_FIELD
+        ],
     }
 
 
@@ -440,7 +446,20 @@ def push():
 
 @app.get("/")
 def index():
-    return FileResponse(FRONTEND_DIR / "index.html")
+    """Serve index.html with cache-busting version stamps on its assets.
+
+    The browser aggressively caches /static/app.js and /static/style.css, so
+    code changes wouldn't appear on refresh. Appending the file's mtime as a
+    ?v= query forces a reload whenever the asset actually changes.
+    """
+    html = (FRONTEND_DIR / "index.html").read_text(encoding="utf-8")
+    for asset in ("app.js", "style.css"):
+        try:
+            ver = int((FRONTEND_DIR / asset).stat().st_mtime)
+        except OSError:
+            continue
+        html = html.replace(f"/static/{asset}", f"/static/{asset}?v={ver}")
+    return HTMLResponse(html)
 
 
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")

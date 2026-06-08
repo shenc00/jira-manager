@@ -108,8 +108,6 @@ class StagingStore:
             fields["priority"] = {"name": data["priority"]}
         if data.get("labels"):
             fields["labels"] = data["labels"]
-        if data.get("duedate"):
-            fields["duedate"] = data["duedate"]
         for field_id, value in (data.get("custom") or {}).items():
             formatted = fields_mod.format_custom(field_id, value)
             if formatted is not None:
@@ -155,7 +153,8 @@ class StagingStore:
                         {"tempId": op["tempId"], "key": new_key,
                          "summary": data.get("summary", "")}
                     )
-                    self._apply_post_create(client, new_key, data)
+                    for w in self._apply_post_create(client, new_key, data):
+                        report["warnings"].append({"key": new_key, "warning": w})
                     # Best-effort epic colour: the colour field often isn't on
                     # the Epic screen, so a failure must not fail the create.
                     if data.get("epicColor"):
@@ -206,11 +205,25 @@ class StagingStore:
     # -- helpers ------------------------------------------------------------
 
     @staticmethod
-    def _apply_post_create(client: JiraClient, key: str, data: dict) -> None:
+    def _apply_post_create(client: JiraClient, key: str, data: dict) -> list[str]:
+        """Apply post-create steps. Returns non-fatal warnings (e.g. due date
+        not on the screen) so they don't fail the whole operation."""
+        warnings: list[str] = []
+        # Due date goes in its own update: if the Due date field isn't on the
+        # issue's screen Jira rejects it, and we don't want that to fail the
+        # create that already succeeded.
+        if data.get("duedate"):
+            try:
+                client.update_issue(key, {"duedate": data["duedate"]})
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(
+                    f"{key}: could not set due date \u2014 likely not on the "
+                    f"issue's edit screen in Jira ({exc})")
         if data.get("comment"):
             client.add_comment(key, data["comment"])
         if data.get("status"):
             client.transition_issue_by_name(key, data["status"])
+        return warnings
 
     @staticmethod
     def _apply_update(client: JiraClient, key: str, changes: dict) -> list[str]:
@@ -228,13 +241,22 @@ class StagingStore:
             fields["priority"] = {"name": changes["priority"]}
         if "labels" in changes:
             fields["labels"] = changes["labels"]
-        if changes.get("duedate"):
-            fields["duedate"] = changes["duedate"]
         for field_id, value in (changes.get("custom") or {}).items():
             # An empty value clears the field (None), so include it explicitly.
             fields[field_id] = fields_mod.format_custom(field_id, value)
         if fields:
             client.update_issue(key, fields)
+
+        # Due date goes in its own update: if the Due date field isn't on the
+        # issue's screen Jira rejects it, and we don't want that to undo the
+        # other field changes above.
+        if changes.get("duedate"):
+            try:
+                client.update_issue(key, {"duedate": changes["duedate"]})
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(
+                    f"{key}: could not set due date \u2014 likely not on the "
+                    f"issue's edit screen in Jira ({exc})")
 
         # Time tracking goes in its own update: if the Time Tracking field isn't
         # on the issue's screen Jira rejects it, and we don't want that to undo

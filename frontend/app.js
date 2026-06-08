@@ -327,7 +327,14 @@ function renderIssueDetail(issue) {
       ${issue.parent ? " · parent " + issue.parent : ""}</p>
 
     ${field("Summary", `<input type="text" id="f-summary" value="${escapeAttr(issue.summary)}">`)}
-    ${field("Description", `<textarea id="f-desc">${escapeHtml(issue.description)}</textarea>`)}
+    ${field("Description",
+        `<textarea id="f-desc">${escapeHtml(issue.description)}</textarea>
+         <div class="desc-upload">
+           <input type="file" id="f-desc-file" style="display:none"
+                  accept=".txt,.md,.markdown,.log,.csv,.json,text/plain">
+           <button type="button" id="f-desc-upload-btn" class="link-btn">📎 Upload a file…</button>
+           <span id="f-desc-file-name" class="muted"></span>
+         </div>`)}
     <div class="row">
       ${field("Status", `<select id="f-status">${statusOpts}</select>`)}
       ${field("Priority", `<select id="f-priority">${priOpts}</select>`)}
@@ -339,7 +346,14 @@ function renderIssueDetail(issue) {
     ${timeTrackingHtml(issue.timetracking)}
 
     ${field("Labels", labelsWidget("f-labels", issue.labels))}
-    ${field("Add comment", `<textarea id="f-comment" placeholder="Leave blank to skip"></textarea>`)}
+    ${field("Add comment",
+        `<textarea id="f-comment" placeholder="Leave blank to skip"></textarea>
+         <div class="desc-upload">
+           <input type="file" id="f-comment-file" style="display:none"
+                  accept=".txt,.md,.markdown,.log,.csv,.json,text/plain">
+           <button type="button" id="f-comment-upload-btn" class="link-btn">📎 Upload a file…</button>
+           <span id="f-comment-file-name" class="muted"></span>
+         </div>`)}
 
     <div class="comments"><label class="muted">Existing comments</label>${commentsHtml}</div>
 
@@ -348,6 +362,8 @@ function renderIssueDetail(issue) {
       <button onclick="selectItem('${issue.key}')">Reset</button>
     </div>`;
   wireAssignee("f-assignee", issue.project);
+  wireFileUpload("f-desc-upload-btn", "f-desc-file", "f-desc-file-name", "f-desc");
+  wireFileUpload("f-comment-upload-btn", "f-comment-file", "f-comment-file-name", "f-comment");
 }
 
 // Render the critical date fields; disabled (read-only) when not on the
@@ -599,27 +615,28 @@ async function openCreateForm(category, parentRef) {
   projSel.onchange = loadTypes;
   wireAssignee("c-assignee", projSel.value);
 
-  wireDescUpload();
+  wireFileUpload("c-desc-upload-btn", "c-desc-file", "c-desc-file-name", "c-desc");
 
   document.getElementById("c-submit").onclick = () => submitCreate(category, parentRef);
 }
 
-// Let the user fill the Description from a text file. Reads the file in the
-// browser (no upload to the server) and drops its contents into the textarea.
-function wireDescUpload() {
-  const btn = document.getElementById("c-desc-upload-btn");
-  const input = document.getElementById("c-desc-file");
-  const nameSpan = document.getElementById("c-desc-file-name");
-  const desc = document.getElementById("c-desc");
-  if (!btn || !input || !desc) return;
+// Let the user fill a textarea (description / comment) from a text file. Reads
+// the file in the browser (no upload to the server) and appends or replaces
+// the textarea's contents.
+function wireFileUpload(btnId, inputId, nameId, targetId) {
+  const btn = document.getElementById(btnId);
+  const input = document.getElementById(inputId);
+  const nameSpan = document.getElementById(nameId);
+  const target = document.getElementById(targetId);
+  if (!btn || !input || !target) return;
 
-  const MAX_BYTES = 1024 * 1024; // 1 MB — Jira descriptions aren't huge
+  const MAX_BYTES = 1024 * 1024; // 1 MB — Jira text fields aren't huge
   btn.onclick = () => input.click();
   input.onchange = () => {
     const file = input.files && input.files[0];
     if (!file) return;
     if (file.size > MAX_BYTES) {
-      toast("File is too large (max 1 MB for a description).", "error");
+      toast("File is too large (max 1 MB).", "error");
       input.value = "";
       return;
     }
@@ -627,7 +644,7 @@ function wireDescUpload() {
     reader.onload = () => {
       const text = String(reader.result || "");
       // If there's already text, append; otherwise replace.
-      desc.value = desc.value.trim() ? `${desc.value.trim()}\n\n${text}` : text;
+      target.value = target.value.trim() ? `${target.value.trim()}\n\n${text}` : text;
       if (nameSpan) nameSpan.textContent = `Loaded “${file.name}”.`;
     };
     reader.onerror = () => toast("Couldn't read that file.", "error");

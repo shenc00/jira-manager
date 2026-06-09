@@ -6,6 +6,8 @@ operations used when pushing staged changes.
 """
 from __future__ import annotations
 
+import random
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -107,20 +109,58 @@ class JiraClient:
 
     # -- low level ----------------------------------------------------------
 
+    # Jira Cloud occasionally returns transient 502/503/504 (and 429 when rate
+    # limited). Retry those a few times with exponential backoff instead of
+    # surfacing the error to the user on the first blip.
+    _RETRY_STATUS = {429, 502, 503, 504}
+    _MAX_RETRIES = 4
+
     def _request(self, method: str, path: str, **kwargs) -> Any:
         url = path if path.startswith("http") else f"{self.api}{path}"
-        resp = self.session.request(method, url, timeout=30, **kwargs)
-        if resp.status_code >= 400:
-            detail = resp.text
+        last_exc: Exception | None = None
+        for attempt in range(self._MAX_RETRIES):
             try:
-                body = resp.json()
-                detail = body.get("errorMessages") or body.get("errors") or body
-            except ValueError:
+                resp = self.session.request(method, url, timeout=30, **kwargs)
+            except requests.RequestException as exc:
+                # Network hiccup / timeout — retry the same way as a 5xx.
+                last_exc = exc
+                if attempt < self._MAX_RETRIES - 1:
+                    self._sleep_backoff(attempt)
+                    continue
+                raise JiraError(f"{method} {url} -> network error: {exc}") from exc
+
+            if resp.status_code in self._RETRY_STATUS and attempt < self._MAX_RETRIES - 1:
+                # Honour Retry-After when present, else exponential backoff.
+                self._sleep_backoff(attempt, resp.headers.get("Retry-After"))
+                continue
+
+            if resp.status_code >= 400:
+                detail = resp.text
+                try:
+                    body = resp.json()
+                    detail = body.get("errorMessages") or body.get("errors") or body
+                except ValueError:
+                    pass
+                raise JiraError(f"{method} {url} -> {resp.status_code}: {detail}")
+            if resp.status_code == 204 or not resp.content:
+                return None
+            return resp.json()
+
+        # Should not reach here, but guard just in case.
+        raise JiraError(f"{method} {url} -> failed after retries: {last_exc}")
+
+    @staticmethod
+    def _sleep_backoff(attempt: int, retry_after: str | None = None) -> None:
+        """Sleep before a retry: Retry-After header if given, else backoff."""
+        if retry_after:
+            try:
+                time.sleep(min(float(retry_after), 30.0))
+                return
+            except (TypeError, ValueError):
                 pass
-            raise JiraError(f"{method} {url} -> {resp.status_code}: {detail}")
-        if resp.status_code == 204 or not resp.content:
-            return None
-        return resp.json()
+        # Exponential backoff with jitter: ~0.5s, 1s, 2s, 4s (+/- jitter).
+        delay = (2 ** attempt) * 0.5 + random.uniform(0, 0.5)
+        time.sleep(delay)
 
     # -- identity / metadata ------------------------------------------------
 

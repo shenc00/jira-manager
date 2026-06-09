@@ -157,6 +157,19 @@ section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; 
 .labels-new { width: 100%; margin-top: 6px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 4px; font: inherit; }
 input:disabled { background: #f4f5f7; color: var(--muted); }
 
+/* Assignee searchable dropdown */
+.assignee-wrap { position: relative; }
+.assignee-input { width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 4px; font: inherit; background: #fff; }
+.assignee-menu {
+  position: absolute; left: 0; right: 0; top: calc(100% + 2px); z-index: 50;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.12); max-height: 220px; overflow-y: auto;
+}
+.assignee-menu.hidden { display: none; }
+.assignee-option { padding: 7px 10px; cursor: pointer; font-size: 13px; }
+.assignee-option:hover, .assignee-option.active { background: #e9f2ff; }
+.assignee-empty { padding: 7px 10px; color: var(--muted); font-size: 12px; }
+
 /* Detail */
 .detail h2 { text-transform: none; font-size: 18px; color: var(--text); letter-spacing: 0; }
 .field { margin-bottom: 14px; }

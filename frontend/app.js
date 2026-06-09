@@ -445,32 +445,104 @@ function escapeHtml(s) { return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;
 function escapeAttr(s) { return escapeHtml(s).replace(/"/g,"&quot;"); }
 
 // Assignee search widget --------------------------------------------------
+// A custom searchable dropdown (native <datalist> proved unreliable across
+// browsers). Typing queries Jira's assignable-users endpoint; clicking a row
+// selects that user. The chosen accountId is stored on the input's dataset.
 function assigneeInput(id, current, project) {
-  return `<input type="text" id="${id}" list="${id}-list" placeholder="${current || "Search user…"}"
-            data-account="" autocomplete="off">
-          <datalist id="${id}-list"></datalist>`;
+  return `<div class="assignee-wrap">
+            <input type="text" id="${id}" class="assignee-input"
+                   placeholder="${current ? escapeAttr("Currently: " + current) : "Search user…"}"
+                   data-account="" autocomplete="off">
+            <div id="${id}-menu" class="assignee-menu hidden"></div>
+          </div>`;
 }
+
 function wireAssignee(id, project) {
   const input = document.getElementById(id);
-  if (!input) return;
+  const menu = document.getElementById(id + "-menu");
+  if (!input || !menu) return;
   let timer;
+  let activeIdx = -1;
+
+  function hide() { menu.classList.add("hidden"); activeIdx = -1; }
+  function show() { if (menu.children.length) menu.classList.remove("hidden"); }
+
+  function render(users) {
+    input._users = users;
+    if (!users.length) {
+      menu.innerHTML = `<div class="assignee-empty">No matching users</div>`;
+      show();
+      return;
+    }
+    menu.innerHTML = users.map((u, i) =>
+      `<div class="assignee-option" data-idx="${i}" data-account="${escapeAttr(u.accountId)}">${escapeHtml(u.displayName)}</div>`
+    ).join("");
+    activeIdx = -1;
+    show();
+  }
+
+  function pick(user) {
+    input.value = user.displayName;
+    input.dataset.account = user.accountId;
+    hide();
+  }
+
+  async function query(q) {
+    try {
+      const { users } = await api(
+        `/api/meta/users?project=${encodeURIComponent(project)}&query=${encodeURIComponent(q || " ")}`);
+      render(users || []);
+    } catch (_) { hide(); }
+  }
+
+  input.addEventListener("focus", () => {
+    // Show a default list immediately so the dropdown is obviously available.
+    if (input._users && input._users.length) { show(); }
+    else { query(input.value.trim()); }
+  });
+
   input.addEventListener("input", () => {
+    // Typing invalidates any previously selected account until re-picked.
+    input.dataset.account = "";
     clearTimeout(timer);
     const q = input.value.trim();
-    if (q.length < 2) return;
-    timer = setTimeout(async () => {
-      try {
-        const { users } = await api(`/api/meta/users?project=${encodeURIComponent(project)}&query=${encodeURIComponent(q)}`);
-        const dl = document.getElementById(id + "-list");
-        dl.innerHTML = users.map((u) => `<option data-account="${u.accountId}" value="${u.displayName}">`).join("");
-        input._users = users;
-      } catch (_) {}
-    }, 300);
+    timer = setTimeout(() => query(q), 250);
   });
+
+  input.addEventListener("keydown", (e) => {
+    const opts = Array.from(menu.querySelectorAll(".assignee-option"));
+    if (!opts.length || menu.classList.contains("hidden")) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, opts.length - 1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+    } else if (e.key === "Enter") {
+      if (activeIdx >= 0) { e.preventDefault(); pick(input._users[activeIdx]); return; }
+    } else if (e.key === "Escape") {
+      hide(); return;
+    } else { return; }
+    opts.forEach((o, i) => o.classList.toggle("active", i === activeIdx));
+    if (opts[activeIdx]) opts[activeIdx].scrollIntoView({ block: "nearest" });
+  });
+
+  menu.addEventListener("mousedown", (e) => {
+    // mousedown (not click) so it fires before the input's blur.
+    const opt = e.target.closest(".assignee-option");
+    if (!opt) return;
+    e.preventDefault();
+    pick(input._users[Number(opt.dataset.idx)]);
+  });
+
+  input.addEventListener("blur", () => setTimeout(hide, 150));
 }
+
 function resolveAssignee(id) {
   const input = document.getElementById(id);
   if (!input || !input.value.trim()) return null;
+  if (input.dataset.account) return input.dataset.account;
+  // Fall back to an exact display-name match if the user typed but didn't click.
   const match = (input._users || []).find((u) => u.displayName === input.value.trim());
   return match ? match.accountId : null;
 }

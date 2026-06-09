@@ -101,13 +101,18 @@ function typeClass(type) {
 }
 
 // ---------- modal ----------
-function openModal(html) {
+// When `persistent` is true the modal won't close on an outside (overlay)
+// click — only its own Cancel / Save buttons can close it. Used for forms
+// where an accidental click outside would discard typed-in work.
+let _modalPersistent = false;
+function openModal(html, persistent = false) {
   $("#modal").innerHTML = html;
+  _modalPersistent = persistent;
   $("#modal-overlay").classList.remove("hidden");
 }
-function closeModal() { $("#modal-overlay").classList.add("hidden"); }
+function closeModal() { _modalPersistent = false; $("#modal-overlay").classList.add("hidden"); }
 $("#modal-overlay").addEventListener("click", (e) => {
-  if (e.target.id === "modal-overlay") closeModal();
+  if (e.target.id === "modal-overlay" && !_modalPersistent) closeModal();
 });
 
 // Promise-based yes/no prompt
@@ -650,7 +655,7 @@ async function openCreateForm(category, parentRef) {
     <div class="modal-actions">
       <button onclick="closeModalBtn()">Cancel</button>
       <button class="primary" id="c-submit">Stage ${category}</button>
-    </div>`);
+    </div>`, /* persistent */ true);
 
   // populate real issue types for the chosen project
   const projSel = document.getElementById("c-project");

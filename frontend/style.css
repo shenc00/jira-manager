@@ -231,15 +231,17 @@ input:disabled { background: #f4f5f7; color: var(--muted); }
 .stage-error { color: #bf2600; font-size: 12px; }
 
 /* Manager update report */
-.modal:has(.rpt-table) { width: min(1100px, 95vw); }
+.modal:has(.rpt-table) { width: min(1200px, 96vw); }
 .rpt-wrap { max-height: 60vh; overflow: auto; border: 1px solid var(--border); border-radius: 4px; }
-.rpt-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.rpt-table { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 12px; }
 .rpt-table th { background: var(--blue); color: #fff; padding: 7px 8px; text-align: left; position: sticky; top: 0; }
-.rpt-table td { border: 1px solid var(--border); padding: 6px 8px; vertical-align: top; }
-.rpt-table td.rpt-epic { background: #f4f5f7; max-width: 220px; }
+.rpt-table td { border: 1px solid var(--border); padding: 6px 8px; vertical-align: top; overflow-wrap: break-word; }
+.rpt-table td.rpt-epic { background: #f4f5f7; }
+.rpt-table th:nth-child(3), .rpt-table th:nth-child(4),
+.rpt-table td:nth-child(3), .rpt-table td:nth-child(4) { white-space: nowrap; }
 .rag { display: inline-block; padding: 1px 8px; border-radius: 10px; color: #fff; font-weight: 700; font-size: 11px; white-space: nowrap; }
 .rpt-desc { font-style: italic; font-size: 11px; margin: 2px 0; }
-.rpt-update { max-width: 340px; font-size: 11px; }
+.rpt-update { font-size: 11px; }
 .rpt-cmt { padding: 3px 0; border-bottom: 1px dashed var(--border); }
 .rpt-cmt:last-child { border-bottom: none; }
 .rpt-nav { display: flex; align-items: center; gap: 8px; margin: 6px 0 12px; }

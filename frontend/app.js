@@ -991,6 +991,9 @@ async function openReport(year, month) {
 
   const body = count ? `
     <table class="rpt-table">
+      <colgroup>
+        <col style="width:14%"><col style="width:22%"><col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:22%">
+      </colgroup>
       <thead><tr><th>Epic</th><th>Story / Sub-task</th><th>Start</th><th>Target end</th><th>Status</th><th>Progress</th><th>Responsible</th><th>Reported by</th><th>Recent comments (4 wks)</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>` : `<p class="muted">No sub-tasks with a Target Completion Date in ${data.month}.</p>`;

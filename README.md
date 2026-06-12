@@ -14,9 +14,10 @@ locally and only written to Jira when you review and push**.
 ## Features
 
 - 🌳 **Work tree** — your epics → stories → sub-tasks, correctly nested. Every
-  sub-task assigned to you appears even when its parent epic/story belongs to
-  someone else **or is already completed** — the epic/story is shown as context
-  so your sub-task always sits in its real place. Type-coloured, with status.
+  item **assigned to you _or_ reported by you** appears — even when a sub-task's
+  parent epic/story belongs to someone else **or is already completed**, the
+  epic/story is shown as context so your sub-task always sits in its real place.
+  Type-coloured, with status.
 - 👁️ **Hide completed** — finished work (Done / Completed / Cancelled) is hidden
   by default; a **Show completed** toggle reveals it.
 - ⏰ **Due highlighting** — items within **3 working days** of their Target
@@ -24,7 +25,13 @@ locally and only written to Jira when you review and push**.
 - ✏️ **Click to edit** — summary, description, **status** (via real workflow
   transitions), priority, **assignee** (type-ahead search), due date,
   **labels** (multi-select of existing labels), the key **dates** (Start,
-  Development End, UAT Start/End, Target Completion), and **comments**.
+  Development End, UAT Start/End, Target Completion), **comments**, and
+  **file attachments**.
+- 📎 **File attachments** — attach real files (Excel, PDF, images, anything, up
+  to 25 MB) to an item. On an **existing** item the file uploads to Jira
+  **immediately** and appears in a list with download links; on a **new**
+  (not-yet-created) item the files are held locally and uploaded **right after
+  the item is created on push**.
 - ➕ **Create** epics, stories and sub-tasks with full attribute forms and a
   **guided flow**: after an epic → *"create a story?"*; after a story →
   *"create a sub-task?"*; after each → *"close session and upload now?"*. New
@@ -336,23 +343,32 @@ Jira allows for that issue type (date fields not on a screen appear read-only):
   e.g. `2w 3d 4h`); shown read-only if the field isn't on the issue's screen
 - **Labels** — multi-select dropdown of existing labels (+ a box to add new ones)
 - **Add comment**
+- **Attachments** — existing files are listed with download links; click
+  **📎 Attach file…** to add one (or several). On an existing item it uploads to
+  Jira **straight away** (no staging needed) and joins the list.
 
 Change what you want, then **Stage changes** — the item is tagged **EDITED** in
-the tree. Nothing is sent to Jira yet.
+the tree. Nothing is sent to Jira yet. *(File attachments on an existing item
+upload immediately and are not part of staging.)*
 
 ### Create new items
 Click **+ New item** → choose **Epic / Story / Sub-task** → fill the form →
-**Stage**. The guided flow then offers to create the natural child (epic →
-story → sub-task), each auto-linked to its parent, and finally asks whether to
-**close the session and upload all changes**. New epics default to **In
-Progress** status and **dark_orange** colour. Sub-tasks require a parent.
+**Stage**. You can **📎 Attach file…** here too; because the item doesn't exist
+in Jira yet, the files are **held locally** and uploaded automatically **right
+after the item is created on push**. The guided flow then offers to create the
+natural child (epic → story → sub-task), each auto-linked to its parent, and
+finally asks whether to **close the session and upload all changes**. New epics
+default to **In Progress** status and **dark_orange** colour. Sub-tasks require
+a parent.
 
 ### Review & push
 **Review changes** (top right, with a count badge) lists every staged
-edit/creation. Remove any you don't want, then **Push all to Jira**. On push,
-new issues are created **parents-first** (so an epic → story → sub-task chain
-links correctly), then field updates, comments and status transitions are
-applied. Anything that fails stays staged with the error shown.
+edit/creation, **including any files queued on new items** (📎). Remove any you
+don't want, then **Push all to Jira**. On push, new issues are created
+**parents-first** (so an epic → story → sub-task chain links correctly), then
+field updates, comments and status transitions are applied, and finally any
+**queued attachments are uploaded** to their now-created items. Anything that
+fails stays staged with the error shown.
 
 > 💡 Nothing you do touches Jira until you press **Push**. Staging is your safe
 > review area.
@@ -360,14 +376,15 @@ applied. Anything that fails stays staged with the error shown.
 ### Monthly Report (PowerPoint)
 Click **📊 Monthly Report**. It collects a month's sub-tasks (those with a
 Target Completion Date in the selected month) and shows a preview table with
-columns **Epic · Story/Sub-task · Start · Target end · Status · Progress ·
-Responsible · Recent comments**. Then **Download PowerPoint** for a single-slide
-`.pptx`.
+columns **Epic · Story / Sub-task · Start · Target end · Status · Progress ·
+Responsible · Reported by · Recent comments**. Then **Download PowerPoint** for
+a single-slide `.pptx`.
 
-A story (and its epic) is included when **either** the epic is assigned to you
-**or** you own a sub-task under that story — so **epics and stories that aren't
-assigned to you still appear**, as long as you have an in-month sub-task beneath
-them. (Sub-tasks whose parent has no epic are grouped under *"(No epic)"*.)
+A story (and its epic) is included when **either** the epic is **assigned to or
+reported by** you **or** you own a sub-task under that story — so **epics and
+stories that aren't yours still appear**, as long as you have an in-month
+sub-task beneath them. (Sub-tasks whose parent has no epic are grouped under
+*"(No epic)"*.)
 
 - **Month selector** — defaults to the current month; use the **◀ / ▶** arrows,
   the month picker, or **This month** to view any past or future month. The
@@ -422,7 +439,8 @@ unusually large batches, and every cancellation is logged to
 ## Sharing with another user (their own token & email)
 
 The app has **no hard-coded account** — each person's view is just
-`assignee = currentUser()` from whatever token is in their `.env`.
+`assignee = currentUser() OR reporter = currentUser()` from whatever token is in
+their `.env`.
 
 1. **Get the code** (`git clone` or copy the folder). The repo never contains
    anyone's token — `.env` and `data/` are git-ignored.
@@ -452,6 +470,11 @@ Each user only ever sees and does what their Jira permissions allow.
   automatically sets the time to **12:00 (noon)** — you don't enter a time, and
   midday avoids any timezone shift to the previous/next day.
 - **Sub-tasks require a parent** (enforced by the form).
+- **Attachments** are uploaded to Jira as real files (max **25 MB** each). On an
+  existing item the upload happens **immediately** (not staged); on a new item
+  the files are held locally and uploaded **after** the item is created on push.
+  Downloads are streamed back through the local server, so they work behind the
+  same corporate proxy as the rest of the app.
 - The hierarchy uses the modern Cloud `parent` field.
 - Your `.env`, `data/staging.json` and `data/auto_cancel.log` are git-ignored —
   your token and Jira data are never committed.
@@ -563,9 +586,9 @@ green check ✓). Notes:
 jira-manager/
 ├── backend/
 │   ├── config.py       # .env loading + all settings
-│   ├── jira_client.py  # Jira Cloud REST v3 wrapper, tree builder, OS-trust TLS
+│   ├── jira_client.py  # Jira Cloud REST v3 wrapper, tree builder, attachments, OS-trust TLS
 │   ├── fields.py       # critical date-field registry + working-day/due logic
-│   ├── staging.py      # local staging store + push (parents-first, colour)
+│   ├── staging.py      # local staging store + push (parents-first, colour, attachments)
 │   ├── report.py       # Monthly Report: gather data, RAG, PowerPoint render
 │   └── main.py         # FastAPI app + JSON API + serves the frontend
 ├── frontend/

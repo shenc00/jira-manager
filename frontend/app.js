@@ -707,25 +707,54 @@ function wireFileUpload(btnId, inputId, nameId, targetId) {
   const target = document.getElementById(targetId);
   if (!btn || !input || !target) return;
 
-  const MAX_BYTES = 1024 * 1024; // 1 MB — Jira text fields aren't huge
+  const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+  const TEXT_EXTS = ["txt", "md", "markdown", "log", "csv", "tsv", "json", "text"];
+  const insert = (text) => {
+    // If there's already text, append; otherwise replace.
+    target.value = target.value.trim() ? `${target.value.trim()}\n\n${text}` : text;
+  };
   btn.onclick = () => input.click();
-  input.onchange = () => {
+  input.onchange = async () => {
     const file = input.files && input.files[0];
     if (!file) return;
     if (file.size > MAX_BYTES) {
-      toast("File is too large (max 1 MB).", "error");
+      toast("File is too large (max 5 MB).", "error");
       input.value = "";
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = String(reader.result || "");
-      // If there's already text, append; otherwise replace.
-      target.value = target.value.trim() ? `${target.value.trim()}\n\n${text}` : text;
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    if (TEXT_EXTS.includes(ext)) {
+      // Plain text: read it straight in the browser.
+      const reader = new FileReader();
+      reader.onload = () => {
+        insert(String(reader.result || ""));
+        if (nameSpan) nameSpan.textContent = `Loaded “${file.name}”.`;
+      };
+      reader.onerror = () => toast("Couldn't read that file.", "error");
+      reader.readAsText(file);
+      input.value = "";
+      return;
+    }
+    // Excel (a binary ZIP) and friends: let the server extract the text.
+    if (nameSpan) nameSpan.textContent = `Reading “${file.name}”…`;
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/extract-text", { method: "POST", body: fd });
+      if (!res.ok) {
+        let msg = `Couldn't read “${file.name}”.`;
+        try { const j = await res.json(); if (j.detail) msg = j.detail; } catch (_) {}
+        throw new Error(msg);
+      }
+      const data = await res.json();
+      insert(data.text || "");
       if (nameSpan) nameSpan.textContent = `Loaded “${file.name}”.`;
-    };
-    reader.onerror = () => toast("Couldn't read that file.", "error");
-    reader.readAsText(file);
+    } catch (e) {
+      if (nameSpan) nameSpan.textContent = "";
+      toast(e.message || "Couldn't read that file.", "error");
+    } finally {
+      input.value = "";
+    }
   };
 }
 

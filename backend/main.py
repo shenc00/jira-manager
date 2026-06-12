@@ -544,7 +544,11 @@ def index():
         except OSError:
             continue
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={ver}")
-    return HTMLResponse(html)
+    return HTMLResponse(html, headers={
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    })
 
 
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")

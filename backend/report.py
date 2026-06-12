@@ -139,6 +139,7 @@ def _build_row(client: JiraClient, s: dict, tgt: str, today) -> dict:
         "ragColor": "#%02X%02X%02X" % (colour[0], colour[1], colour[2]),
         "_color": colour,
         "who": (sf.get("assignee") or {}).get("displayName", "Unassigned"),
+        "reporter": (sf.get("reporter") or {}).get("displayName", "\u2014"),
         "updates": updates,
         "commentsFallback": cmts.get("fallback", False),
     }
@@ -228,7 +229,8 @@ def gather(client: JiraClient, year: int, month: int,
         sf = st["fields"]
         subs = client.search(
             f'parent = "{skey}" ORDER BY summary',
-            fields=["summary", "status", "assignee", START_DATE_FIELD, tgt])
+            fields=["summary", "status", "assignee", "reporter",
+                    START_DATE_FIELD, tgt])
         month_subs = [s for s in subs if _in_month(s["fields"].get(tgt), year, month)]
         if not month_subs:
             continue
@@ -275,8 +277,8 @@ def month_label(year: int, month: int) -> str:
 # --- PowerPoint rendering --------------------------------------------------
 
 COLS = ["Epic", "Story / Sub-task", "Start", "Target end", "Status",
-        "Progress", "Responsible", "Recent comments (4 wks)"]
-COL_WIDTHS = [1.7, 2.5, 0.8, 0.9, 0.9, 1.0, 1.2, 3.2]  # ~12.2 on 13.33 slide
+        "Progress", "Responsible", "Reported by", "Recent comments (4 wks)"]
+COL_WIDTHS = [1.6, 2.4, 0.75, 0.85, 0.85, 0.9, 1.1, 1.1, 2.8]  # ~12.35 on 13.33 slide
 
 
 def _set_cell(cell, runs, *, bold=False, size=9, color=DARK, fill=None,
@@ -386,6 +388,7 @@ def build_pptx(epics: list[dict], year: int, month: int,
         _set_cell(table.cell(r, 5), sub.get("status", ""), size=8,
                   align=PP_ALIGN.CENTER)
         _set_cell(table.cell(r, 6), sub["who"], size=8)
+        _set_cell(table.cell(r, 7), sub.get("reporter", "\u2014"), size=8)
         updates = sub.get("updates") or []
         if updates:
             fb = " (latest, none in 4 wks)" if sub.get("commentsFallback") else ""
@@ -393,9 +396,9 @@ def build_pptx(epics: list[dict], year: int, month: int,
             for u in updates:
                 lines.append((u["text"], False))
                 lines.append(("- {0}, {1}{2}".format(u["author"], u["date"], fb), False))
-            _set_cell(table.cell(r, 7), lines, size=7, color=DARK)
+            _set_cell(table.cell(r, 8), lines, size=7, color=DARK)
         else:
-            _set_cell(table.cell(r, 7), [("No comments", False)], size=7, color=GREY)
+            _set_cell(table.cell(r, 8), [("No comments", False)], size=7, color=GREY)
 
     # Merge epic cells per group
     r = 1

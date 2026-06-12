@@ -981,6 +981,7 @@ async function openReport(year, month) {
           <td><span class="rag" style="background:${s.ragColor}">${s.rag}</span></td>
           <td>${escapeHtml(s.status || "")}</td>
           <td>${escapeHtml(s.who)}</td>
+          <td>${escapeHtml(s.reporter || "\u2014")}</td>
           <td class="rpt-update">${updateCell}</td>
         </tr>`;
         epShown = true;
@@ -990,7 +991,7 @@ async function openReport(year, month) {
 
   const body = count ? `
     <table class="rpt-table">
-      <thead><tr><th>Epic</th><th>Story / Sub-task</th><th>Start</th><th>Target end</th><th>Status</th><th>Progress</th><th>Responsible</th><th>Recent comments (4 wks)</th></tr></thead>
+      <thead><tr><th>Epic</th><th>Story / Sub-task</th><th>Start</th><th>Target end</th><th>Status</th><th>Progress</th><th>Responsible</th><th>Reported by</th><th>Recent comments (4 wks)</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table>` : `<p class="muted">No sub-tasks with a Target Completion Date in ${data.month}.</p>`;
 

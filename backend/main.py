@@ -11,7 +11,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -431,6 +431,91 @@ def report_pptx(year: int | None = None, month: int | None = None,
         ),
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+TEXT_UPLOAD_EXTS = {
+    ".txt", ".md", ".markdown", ".log", ".csv", ".tsv", ".json", ".text",
+}
+
+
+def _decode_text(data: bytes) -> str:
+    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def _xlsx_to_text(data: bytes, max_rows: int = 1000, max_cols: int = 50) -> str:
+    """Render an .xlsx/.xlsm workbook as tab-separated text (one block per
+    sheet). Values only (formulas resolved); blank rows skipped."""
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="Reading Excel files needs the openpyxl library. In "
+                   "PowerShell (with the .venv active) run: "
+                   "pip install -r requirements.txt",
+        )
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True,
+                                    data_only=True)
+    except Exception as exc:  # openpyxl raises a variety of error types
+        raise HTTPException(status_code=400,
+                            detail=f"Couldn't read that Excel file: {exc}")
+    multi = len(wb.sheetnames) > 1
+    blocks: list[str] = []
+    for ws in wb.worksheets:
+        lines: list[str] = []
+        truncated = False
+        for r, row in enumerate(ws.iter_rows(values_only=True)):
+            if r >= max_rows:
+                truncated = True
+                break
+            vals = ["" if v is None else str(v) for v in row[:max_cols]]
+            if any(v.strip() for v in vals):
+                lines.append("\t".join(vals).rstrip())
+        if not lines:
+            continue
+        block = "\n".join(lines)
+        if truncated:
+            block += f"\n\u2026 (first {max_rows} rows of \u201c{ws.title}\u201d)"
+        blocks.append(f"=== {ws.title} ===\n{block}" if multi else block)
+    wb.close()
+    return "\n\n".join(blocks).strip()
+
+
+@app.post("/api/extract-text")
+async def extract_text(file: UploadFile = File(...)):
+    """Extract readable text from an uploaded file for a description/comment box.
+
+    Excel is parsed (it's a binary ZIP, so reading it as text yields garbage);
+    plain-text formats are decoded as-is.
+    """
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File is too large (max 5 MB).")
+    name = (file.filename or "").lower()
+    ext = name[name.rfind("."):] if "." in name else ""
+    if ext in (".xlsx", ".xlsm"):
+        text = _xlsx_to_text(data)
+    elif ext == ".xls":
+        raise HTTPException(
+            status_code=415,
+            detail="Old .xls files aren\u2019t supported \u2014 save as .xlsx and retry.")
+    elif ext in TEXT_UPLOAD_EXTS:
+        text = _decode_text(data)
+    else:
+        text = _decode_text(data)
+        if "\x00" in text or text.count("\ufffd") > max(10, len(text) // 20):
+            raise HTTPException(
+                status_code=415,
+                detail=f"\u201c{file.filename}\u201d isn\u2019t a readable text or Excel file.")
+    if len(text) > 200_000:
+        text = text[:200_000] + "\n\u2026 (truncated)"
+    return {"text": text, "filename": file.filename}
 
 
 @app.post("/api/push")

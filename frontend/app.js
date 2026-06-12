@@ -336,7 +336,7 @@ function renderIssueDetail(issue) {
         `<textarea id="f-desc">${escapeHtml(issue.description)}</textarea>
          <div class="desc-upload">
            <input type="file" id="f-desc-file" style="display:none"
-                  accept=".txt,.md,.markdown,.log,.csv,.json,text/plain">
+                  accept=".txt,.md,.markdown,.log,.csv,.tsv,.json,.xlsx,.xlsm,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
            <button type="button" id="f-desc-upload-btn" class="link-btn">📎 Upload a file…</button>
            <span id="f-desc-file-name" class="muted"></span>
          </div>`)}
@@ -355,7 +355,7 @@ function renderIssueDetail(issue) {
         `<textarea id="f-comment" placeholder="Leave blank to skip"></textarea>
          <div class="desc-upload">
            <input type="file" id="f-comment-file" style="display:none"
-                  accept=".txt,.md,.markdown,.log,.csv,.json,text/plain">
+                  accept=".txt,.md,.markdown,.log,.csv,.tsv,.json,.xlsx,.xlsm,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
            <button type="button" id="f-comment-upload-btn" class="link-btn">📎 Upload a file…</button>
            <span id="f-comment-file-name" class="muted"></span>
          </div>`)}
@@ -637,7 +637,7 @@ async function openCreateForm(category, parentRef) {
         `<textarea id="c-desc"></textarea>
          <div class="desc-upload">
            <input type="file" id="c-desc-file" style="display:none"
-                  accept=".txt,.md,.markdown,.log,.csv,.json,text/plain">
+                  accept=".txt,.md,.markdown,.log,.csv,.tsv,.json,.xlsx,.xlsm,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
            <button type="button" id="c-desc-upload-btn" class="link-btn">📎 Upload a file…</button>
            <span id="c-desc-file-name" class="muted"></span>
          </div>`)}

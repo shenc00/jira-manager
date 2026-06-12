@@ -307,12 +307,13 @@ class JiraClient:
                    assignee: str | None = None) -> list[dict]:
         """Build the work tree for a user (accountId; defaults to current user).
 
-        Seeds from *every* issue assigned to the user (any type, so sub-tasks are
-        included even when their parent epic/story is owned by someone else),
-        expands the full descendant breakdown of the user's epics/stories, and
-        pulls in any missing ancestors as context so each item nests under its
-        real parent (e.g. a story you own appears under its epic, not as a
-        separate root).
+        Seeds from *every* issue assigned to OR reported by the user (any type,
+        so sub-tasks are included even when their parent epic/story is owned by
+        someone else), expands the full descendant breakdown of the user's
+        epics/stories — so every sub-task under a story the user owns or
+        reported is shown regardless of who it's assigned to — and pulls in any
+        missing ancestors as context so each item nests under its real parent
+        (e.g. a story you own appears under its epic, not as a separate root).
 
         When ``hide_done`` is true, issues in the "Done" status category are
         excluded (ancestors included only as needed for structure).
@@ -320,7 +321,8 @@ class JiraClient:
         who = "currentUser()" if not assignee else f'"{assignee}"'
         done_clause = " AND statusCategory != Done" if hide_done else ""
 
-        mine = self.search(f"assignee = {who}{done_clause}")
+        mine = self.search(
+            f"(assignee = {who} OR reporter = {who}){done_clause}")
         mine_by_key = {i["key"]: i for i in mine}
 
         nodes: dict[str, dict] = {}

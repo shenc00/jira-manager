@@ -148,10 +148,13 @@ def gather(client: JiraClient, year: int, month: int,
            assignee: str | None = None) -> list[dict]:
     """Collect epics -> stories -> in-month sub-tasks with RAG status.
 
-    A story (and its epic) is included if EITHER the epic is assigned to the
-    user OR the story holds a sub-task assigned to the user. So epics/stories
-    that aren't assigned to the user still appear, as long as the user owns a
-    sub-task under them with a Target Completion Date in the selected month.
+    A story (and its epic) is included if ANY of these hold:
+      * the epic is assigned to the user, or
+      * the story itself is assigned to the user, or
+      * the story holds a sub-task assigned to the user.
+    In every case the story is only shown when it has at least one sub-task
+    whose Target Completion Date falls in the selected month; all such
+    sub-tasks are then listed regardless of who they are assigned to.
     ``assignee`` is an accountId; defaults to the current user.
     """
     today = date.today()
@@ -184,6 +187,13 @@ def gather(client: JiraClient, year: int, month: int,
             parent = (s["fields"].get("parent") or {}).get("key")
             if parent:
                 story_keys.add(parent)
+
+    #    (c) stories assigned directly to the user (epic/sub-tasks may not be).
+    #        Their in-month sub-tasks should still surface in the report.
+    for st in client.search(f"assignee = {who} AND issuetype != Epic",
+                            fields=["issuetype"]):
+        if not (st["fields"].get("issuetype") or {}).get("subtask"):
+            story_keys.add(st["key"])
 
     if not story_keys:
         return []

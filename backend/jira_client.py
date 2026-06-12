@@ -390,7 +390,7 @@ class JiraClient:
         base = [
             "summary", "description", "issuetype", "status", "assignee",
             "priority", "labels", "duedate", "parent", "comment", "created",
-            "updated", "reporter", "timetracking",
+            "updated", "reporter", "timetracking", "attachment",
         ]
         fields = ",".join(base + fields_mod.CRITICAL_IDS)
         data = self._request("GET", f"/issue/{key}?fields={fields}")
@@ -430,6 +430,17 @@ class JiraClient:
 
         target = f.get(fields_mod.TARGET_COMPLETION_FIELD)
         flag, wdays = fields_mod.due_flag(target)
+        attachments = [
+            {
+                "id": a.get("id"),
+                "filename": a.get("filename", ""),
+                "size": a.get("size", 0),
+                "mimeType": a.get("mimeType", ""),
+                "created": a.get("created", ""),
+                "author": (a.get("author") or {}).get("displayName", ""),
+            }
+            for a in (f.get("attachment") or [])
+        ]
         return {
             "key": data["key"],
             "summary": f.get("summary", ""),
@@ -448,6 +459,7 @@ class JiraClient:
             "timetracking": timetracking,
             "dueFlag": flag,
             "workingDays": wdays,
+            "attachments": attachments,
         }
 
     def get_labels(self) -> list[str]:
@@ -581,6 +593,32 @@ class JiraClient:
             "POST", f"/issue/{key}/comment",
             json={"body": text_to_adf(text)},
         )
+
+    def add_attachment(self, key: str, filename: str, content: bytes,
+                       content_type: str | None = None) -> list[dict]:
+        """Attach a file to an issue.
+
+        Jira requires the ``X-Atlassian-Token: no-check`` header and a
+        multipart body. The session's default ``Content-Type: application/json``
+        must be dropped (set to None) so requests can compute the multipart
+        boundary itself.
+        """
+        return self._request(
+            "POST", f"/issue/{key}/attachments",
+            headers={"X-Atlassian-Token": "no-check", "Content-Type": None},
+            files={"file": (filename, content,
+                            content_type or "application/octet-stream")},
+        ) or []
+
+    def download_attachment(self, attachment_id: str) -> tuple[bytes, str]:
+        """Return (content, mimeType) for an attachment by id."""
+        url = f"{self.api}/attachment/content/{attachment_id}"
+        resp = self.session.get(url, timeout=60, allow_redirects=True)
+        if resp.status_code >= 400:
+            raise JiraError(
+                f"GET {url} -> {resp.status_code}: {resp.text[:200]}")
+        return resp.content, resp.headers.get("Content-Type",
+                                              "application/octet-stream")
 
     # -- stale "On Hold" detection -----------------------------------------
 

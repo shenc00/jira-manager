@@ -102,6 +102,13 @@ section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; 
 }
 .link-btn:hover { opacity: .8; }
 
+/* Attachments list */
+.attach-list { list-style: none; margin: 0 0 2px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.attach-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.attach-item a { color: var(--accent, #4c8bf5); text-decoration: none; word-break: break-all; }
+.attach-item a:hover { text-decoration: underline; }
+.attach-item .muted { font-size: 11px; }
+
 /* Tree */
 .tree ul { list-style: none; margin: 0; padding-left: 18px; }
 .tree > ul { padding-left: 0; }

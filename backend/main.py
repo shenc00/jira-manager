@@ -11,7 +11,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -284,7 +284,14 @@ def stage_create(body: CreateBody):
 
 @app.get("/api/staging")
 def list_staging():
-    return {"ops": staging.all(), "count": len(staging.all())}
+    # Strip the (potentially large) base64 payload from attachment ops; the
+    # review UI only needs the filename/ref, not the bytes.
+    ops = [
+        {k: v for k, v in op.items() if k != "data"} if op.get("kind") == "attachment"
+        else op
+        for op in staging.all()
+    ]
+    return {"ops": ops, "count": len(ops)}
 
 
 @app.delete("/api/staging/{op_id}")
@@ -433,89 +440,68 @@ def report_pptx(year: int | None = None, month: int | None = None,
     )
 
 
-TEXT_UPLOAD_EXTS = {
-    ".txt", ".md", ".markdown", ".log", ".csv", ".tsv", ".json", ".text",
-}
+MAX_ATTACH_BYTES = 25 * 1024 * 1024  # 25 MB client/server guard
 
 
-def _decode_text(data: bytes) -> str:
-    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
-        try:
-            return data.decode(enc)
-        except UnicodeDecodeError:
-            continue
-    return data.decode("utf-8", errors="replace")
+def _attach_summary(a: dict) -> dict:
+    return {
+        "id": a.get("id"),
+        "filename": a.get("filename", ""),
+        "size": a.get("size", 0),
+        "mimeType": a.get("mimeType", ""),
+        "created": a.get("created", ""),
+        "author": (a.get("author") or {}).get("displayName", ""),
+    }
 
 
-def _xlsx_to_text(data: bytes, max_rows: int = 1000, max_cols: int = 50) -> str:
-    """Render an .xlsx/.xlsm workbook as tab-separated text (one block per
-    sheet). Values only (formulas resolved); blank rows skipped."""
-    try:
-        import openpyxl
-    except ImportError:
+@app.post("/api/issue/{key}/attachments")
+async def attach_to_issue(key: str, file: UploadFile = File(...)):
+    """Attach a file to an existing Jira issue (uploaded immediately)."""
+    if key.startswith("temp:"):
         raise HTTPException(
-            status_code=503,
-            detail="Reading Excel files needs the openpyxl library. In "
-                   "PowerShell (with the .venv active) run: "
-                   "pip install -r requirements.txt",
-        )
+            status_code=400,
+            detail="This item hasn\u2019t been created in Jira yet \u2014 it will "
+                   "be attached when you push.")
+    data = await file.read()
+    if len(data) > MAX_ATTACH_BYTES:
+        raise HTTPException(status_code=413, detail="File is too large (max 25 MB).")
+    c = client()
     try:
-        wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True,
-                                    data_only=True)
-    except Exception as exc:  # openpyxl raises a variety of error types
-        raise HTTPException(status_code=400,
-                            detail=f"Couldn't read that Excel file: {exc}")
-    multi = len(wb.sheetnames) > 1
-    blocks: list[str] = []
-    for ws in wb.worksheets:
-        lines: list[str] = []
-        truncated = False
-        for r, row in enumerate(ws.iter_rows(values_only=True)):
-            if r >= max_rows:
-                truncated = True
-                break
-            vals = ["" if v is None else str(v) for v in row[:max_cols]]
-            if any(v.strip() for v in vals):
-                lines.append("\t".join(vals).rstrip())
-        if not lines:
-            continue
-        block = "\n".join(lines)
-        if truncated:
-            block += f"\n\u2026 (first {max_rows} rows of \u201c{ws.title}\u201d)"
-        blocks.append(f"=== {ws.title} ===\n{block}" if multi else block)
-    wb.close()
-    return "\n\n".join(blocks).strip()
+        created = c.add_attachment(
+            key, file.filename or "upload", data, file.content_type)
+    except JiraError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"attachments": [_attach_summary(a) for a in created]}
 
 
-@app.post("/api/extract-text")
-async def extract_text(file: UploadFile = File(...)):
-    """Extract readable text from an uploaded file for a description/comment box.
+@app.get("/api/issue/attachment/{attachment_id}")
+def download_attachment(attachment_id: str, name: str | None = None):
+    """Proxy an attachment download \u2014 the browser isn\u2019t authenticated to
+    Jira, so the bytes are fetched server-side with the API token."""
+    c = client()
+    try:
+        content, mime = c.download_attachment(attachment_id)
+    except JiraError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    safe = (name or f"attachment-{attachment_id}").replace('"', "").replace("\n", "")
+    return StreamingResponse(
+        io.BytesIO(content), media_type=mime or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{safe}"'})
 
-    Excel is parsed (it's a binary ZIP, so reading it as text yields garbage);
-    plain-text formats are decoded as-is.
+
+@app.post("/api/stage/attachment")
+async def stage_attachment(ref: str = Form(...), file: UploadFile = File(...)):
+    """Stage a file to be attached once a not-yet-created issue is pushed.
+
+    ``ref`` is the staged create\u2019s tempId (or a real key).
     """
     data = await file.read()
-    if len(data) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="File is too large (max 5 MB).")
-    name = (file.filename or "").lower()
-    ext = name[name.rfind("."):] if "." in name else ""
-    if ext in (".xlsx", ".xlsm"):
-        text = _xlsx_to_text(data)
-    elif ext == ".xls":
-        raise HTTPException(
-            status_code=415,
-            detail="Old .xls files aren\u2019t supported \u2014 save as .xlsx and retry.")
-    elif ext in TEXT_UPLOAD_EXTS:
-        text = _decode_text(data)
-    else:
-        text = _decode_text(data)
-        if "\x00" in text or text.count("\ufffd") > max(10, len(text) // 20):
-            raise HTTPException(
-                status_code=415,
-                detail=f"\u201c{file.filename}\u201d isn\u2019t a readable text or Excel file.")
-    if len(text) > 200_000:
-        text = text[:200_000] + "\n\u2026 (truncated)"
-    return {"text": text, "filename": file.filename}
+    if len(data) > MAX_ATTACH_BYTES:
+        raise HTTPException(status_code=413, detail="File is too large (max 25 MB).")
+    op = staging.stage_attachment(
+        ref, file.filename or "upload", file.content_type, data)
+    return {"op": {"id": op["id"], "filename": op["filename"], "ref": op["ref"]},
+            "count": len(staging.all())}
 
 
 @app.post("/api/push")

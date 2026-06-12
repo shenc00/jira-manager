@@ -333,13 +333,7 @@ function renderIssueDetail(issue) {
 
     ${field("Summary", `<input type="text" id="f-summary" value="${escapeAttr(issue.summary)}">`)}
     ${field("Description",
-        `<textarea id="f-desc">${escapeHtml(issue.description)}</textarea>
-         <div class="desc-upload">
-           <input type="file" id="f-desc-file" style="display:none"
-                  accept=".txt,.md,.markdown,.log,.csv,.tsv,.json,.xlsx,.xlsm,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-           <button type="button" id="f-desc-upload-btn" class="link-btn">📎 Upload a file…</button>
-           <span id="f-desc-file-name" class="muted"></span>
-         </div>`)}
+        `<textarea id="f-desc">${escapeHtml(issue.description)}</textarea>`)}
     <div class="row">
       ${field("Status", `<select id="f-status">${statusOpts}</select>`)}
       ${field("Priority", `<select id="f-priority">${priOpts}</select>`)}
@@ -351,14 +345,9 @@ function renderIssueDetail(issue) {
     ${timeTrackingHtml(issue.timetracking)}
 
     ${field("Labels", labelsWidget("f-labels", issue.labels))}
+    ${field("Attachments", attachmentsBlock(issue))}
     ${field("Add comment",
-        `<textarea id="f-comment" placeholder="Leave blank to skip"></textarea>
-         <div class="desc-upload">
-           <input type="file" id="f-comment-file" style="display:none"
-                  accept=".txt,.md,.markdown,.log,.csv,.tsv,.json,.xlsx,.xlsm,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-           <button type="button" id="f-comment-upload-btn" class="link-btn">📎 Upload a file…</button>
-           <span id="f-comment-file-name" class="muted"></span>
-         </div>`)}
+        `<textarea id="f-comment" placeholder="Leave blank to skip"></textarea>`)}
 
     <div class="comments"><label class="muted">Existing comments</label>${commentsHtml}</div>
 
@@ -367,8 +356,7 @@ function renderIssueDetail(issue) {
       <button onclick="selectItem('${issue.key}')">Reset</button>
     </div>`;
   wireAssignee("f-assignee", issue.project);
-  wireFileUpload("f-desc-upload-btn", "f-desc-file", "f-desc-file-name", "f-desc");
-  wireFileUpload("f-comment-upload-btn", "f-comment-file", "f-comment-file-name", "f-comment");
+  wireAttachImmediate(issue.key);
 }
 
 // Render the critical date fields; disabled (read-only) when not on the
@@ -633,14 +621,7 @@ async function openCreateForm(category, parentRef) {
                `<input type="text" id="c-parent" placeholder="e.g. ISC-123">`))
       : `<input type="hidden" id="c-parent" value="${parentRef}">`}
     ${field("Summary (required)", `<input type="text" id="c-summary">`)}
-    ${field("Description",
-        `<textarea id="c-desc"></textarea>
-         <div class="desc-upload">
-           <input type="file" id="c-desc-file" style="display:none"
-                  accept=".txt,.md,.markdown,.log,.csv,.tsv,.json,.xlsx,.xlsm,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-           <button type="button" id="c-desc-upload-btn" class="link-btn">📎 Upload a file…</button>
-           <span id="c-desc-file-name" class="muted"></span>
-         </div>`)}
+    ${field("Description", `<textarea id="c-desc"></textarea>`)}
     <div class="row">
       ${field("Priority", `<select id="c-priority"><option value="">—</option>${(META.priorities||[]).map(p=>`<option>${p.name}</option>`).join("")}</select>`)}
       ${field("Target completion date", `<input type="date" id="c-target">`)}
@@ -652,6 +633,13 @@ async function openCreateForm(category, parentRef) {
     <div id="c-critical"></div>
     ${field("Assignee", assigneeInput("c-assignee", "", defProj))}
     ${field("Labels", labelsWidget("c-labels", []))}
+    ${field("Attachments", `
+      <ul class="attach-list" id="c-attach-list"></ul>
+      <div class="desc-upload">
+        <input type="file" id="c-attach-file" style="display:none" multiple>
+        <button type="button" id="c-attach-btn" class="link-btn">📎 Attach file…</button>
+        <span class="muted">uploaded when you push</span>
+      </div>`)}
     <div class="modal-actions">
       <button onclick="closeModalBtn()">Cancel</button>
       <button class="primary" id="c-submit">Stage ${category}</button>
@@ -692,70 +680,141 @@ async function openCreateForm(category, parentRef) {
   projSel.onchange = loadTypes;
   wireAssignee("c-assignee", projSel.value);
 
-  wireFileUpload("c-desc-upload-btn", "c-desc-file", "c-desc-file-name", "c-desc");
+  _pendingCreateFiles = [];
+  wirePendingAttach();
 
   document.getElementById("c-submit").onclick = () => submitCreate(category, parentRef);
 }
 
-// Let the user fill a textarea (description / comment) from a text file. Reads
-// the file in the browser (no upload to the server) and appends or replaces
-// the textarea's contents.
-function wireFileUpload(btnId, inputId, nameId, targetId) {
-  const btn = document.getElementById(btnId);
-  const input = document.getElementById(inputId);
-  const nameSpan = document.getElementById(nameId);
-  const target = document.getElementById(targetId);
-  if (!btn || !input || !target) return;
+// ---------- file attachments ----------
+let _pendingCreateFiles = [];          // files queued on the create form
+const MAX_ATTACH_BYTES = 25 * 1024 * 1024; // 25 MB
 
-  const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
-  const TEXT_EXTS = ["txt", "md", "markdown", "log", "csv", "tsv", "json", "text"];
-  const insert = (text) => {
-    // If there's already text, append; otherwise replace.
-    target.value = target.value.trim() ? `${target.value.trim()}\n\n${text}` : text;
-  };
+function fmtBytes(n) {
+  if (!n) return "";
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return Math.round(n / 1024) + " KB";
+  return (n / 1024 / 1024).toFixed(1) + " MB";
+}
+
+function attachmentLi(a) {
+  const url = `/api/issue/attachment/${encodeURIComponent(a.id)}?name=${encodeURIComponent(a.filename)}`;
+  return `<li class="attach-item" data-id="${a.id}">
+    <a href="${url}" target="_blank" rel="noopener">📎 ${escapeHtml(a.filename)}</a>
+    ${a.size ? `<span class="muted">${fmtBytes(a.size)}</span>` : ""}
+  </li>`;
+}
+
+function attachmentsBlock(issue) {
+  const list = (issue.attachments || []).map(attachmentLi).join("");
+  return `<ul class="attach-list" id="f-attach-list">${list ||
+      `<li class="muted attach-empty">No attachments yet.</li>`}</ul>
+    <div class="desc-upload">
+      <input type="file" id="f-attach-file" style="display:none" multiple>
+      <button type="button" id="f-attach-btn" class="link-btn">📎 Attach file…</button>
+      <span id="f-attach-status" class="muted"></span>
+    </div>`;
+}
+
+// Edit view: upload straight to the existing Jira issue.
+function wireAttachImmediate(key) {
+  const btn = document.getElementById("f-attach-btn");
+  const input = document.getElementById("f-attach-file");
+  const status = document.getElementById("f-attach-status");
+  const list = document.getElementById("f-attach-list");
+  if (!btn || !input) return;
   btn.onclick = () => input.click();
   input.onchange = async () => {
-    const file = input.files && input.files[0];
-    if (!file) return;
-    if (file.size > MAX_BYTES) {
-      toast("File is too large (max 5 MB).", "error");
-      input.value = "";
-      return;
+    const files = Array.from(input.files || []);
+    input.value = "";
+    for (const file of files) {
+      if (file.size > MAX_ATTACH_BYTES) {
+        toast(`“${file.name}” is too large (max 25 MB).`, "error");
+        continue;
+      }
+      if (status) status.textContent = `Uploading “${file.name}”…`;
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch(`/api/issue/${encodeURIComponent(key)}/attachments`,
+          { method: "POST", body: fd });
+        if (!res.ok) {
+          let msg = `Couldn't attach “${file.name}”.`;
+          try { const j = await res.json(); if (j.detail) msg = j.detail; } catch (_) {}
+          throw new Error(msg);
+        }
+        const data = await res.json();
+        const empty = list && list.querySelector(".attach-empty");
+        if (empty) empty.remove();
+        (data.attachments || []).forEach((a) => {
+          if (list) list.insertAdjacentHTML("beforeend", attachmentLi(a));
+        });
+        toast(`Attached “${file.name}”.`, "success");
+      } catch (e) {
+        toast(e.message || "Attach failed.", "error");
+      } finally {
+        if (status) status.textContent = "";
+      }
     }
-    const ext = (file.name.split(".").pop() || "").toLowerCase();
-    if (TEXT_EXTS.includes(ext)) {
-      // Plain text: read it straight in the browser.
-      const reader = new FileReader();
-      reader.onload = () => {
-        insert(String(reader.result || ""));
-        if (nameSpan) nameSpan.textContent = `Loaded “${file.name}”.`;
-      };
-      reader.onerror = () => toast("Couldn't read that file.", "error");
-      reader.readAsText(file);
-      input.value = "";
-      return;
-    }
-    // Excel (a binary ZIP) and friends: let the server extract the text.
-    if (nameSpan) nameSpan.textContent = `Reading “${file.name}”…`;
+  };
+}
+
+// Create view: hold files locally; they're uploaded after the issue is created
+// on push (the issue doesn't exist in Jira yet).
+function renderPendingAttach() {
+  const list = document.getElementById("c-attach-list");
+  if (!list) return;
+  list.innerHTML = _pendingCreateFiles.length
+    ? _pendingCreateFiles.map((f, i) =>
+        `<li class="attach-item">📎 ${escapeHtml(f.name)}
+           <span class="muted">${fmtBytes(f.size)}</span>
+           <button type="button" class="link-btn" onclick="removePendingFile(${i})">remove</button>
+         </li>`).join("")
+    : "";
+}
+
+function removePendingFile(i) {
+  _pendingCreateFiles.splice(i, 1);
+  renderPendingAttach();
+}
+window.removePendingFile = removePendingFile;
+
+function wirePendingAttach() {
+  const btn = document.getElementById("c-attach-btn");
+  const input = document.getElementById("c-attach-file");
+  if (!btn || !input) return;
+  btn.onclick = () => input.click();
+  input.onchange = () => {
+    Array.from(input.files || []).forEach((file) => {
+      if (file.size > MAX_ATTACH_BYTES) {
+        toast(`“${file.name}” is too large (max 25 MB).`, "error");
+        return;
+      }
+      _pendingCreateFiles.push(file);
+    });
+    input.value = "";
+    renderPendingAttach();
+  };
+}
+
+// Upload the create form's queued files against a now-known ref (tempId).
+async function uploadPendingAttachments(ref) {
+  for (const file of _pendingCreateFiles) {
     try {
       const fd = new FormData();
+      fd.append("ref", ref);
       fd.append("file", file);
-      const res = await fetch("/api/extract-text", { method: "POST", body: fd });
+      const res = await fetch("/api/stage/attachment", { method: "POST", body: fd });
       if (!res.ok) {
-        let msg = `Couldn't read “${file.name}”.`;
+        let msg = `Couldn't stage “${file.name}”.`;
         try { const j = await res.json(); if (j.detail) msg = j.detail; } catch (_) {}
         throw new Error(msg);
       }
-      const data = await res.json();
-      insert(data.text || "");
-      if (nameSpan) nameSpan.textContent = `Loaded “${file.name}”.`;
     } catch (e) {
-      if (nameSpan) nameSpan.textContent = "";
-      toast(e.message || "Couldn't read that file.", "error");
-    } finally {
-      input.value = "";
+      toast(e.message || `Couldn't stage “${file.name}”.`, "error");
     }
-  };
+  }
+  _pendingCreateFiles = [];
 }
 
 async function submitCreate(category, parentRef) {
@@ -796,6 +855,10 @@ async function submitCreate(category, parentRef) {
     refreshStageCount();
     await loadTree();
   } catch (e) { toast(e.message, "error"); return; }
+
+  // Queue any attached files against the new item's tempId; they upload to
+  // Jira right after the item is created on push.
+  if (_pendingCreateFiles.length) await uploadPendingAttachments(op.tempId);
 
   // ----- guided follow-up prompts (the yes/no flow you described) -----
   await afterCreate(category, op.tempId);
@@ -845,9 +908,12 @@ async function reviewChanges() {
   }
   const items = ops.map((op) => {
     const isCreate = op.kind === "create";
-    const title = isCreate ? `${op.data.issuetype}: ${op.data.summary}` : op.key;
+    const isAttach = op.kind === "attachment";
+    const title = isCreate ? `${op.data.issuetype}: ${op.data.summary}`
+      : isAttach ? `📎 ${op.filename}` : op.key;
     const detail = isCreate
       ? `Project ${op.data.project}${op.data.parentRef ? ", parent " + op.data.parentRef : ""}`
+      : isAttach ? `attach to ${op.ref}`
       : Object.keys(op.changes).join(", ");
     return `<div class="stage-item">
       <span class="stage-kind kind-${op.kind}">${op.kind}</span>
@@ -892,12 +958,14 @@ async function pushChanges() {
     const report = await api("/api/push", { method: "POST" });
     const created = report.created.map((c) => `${c.tempId} → <b>${c.key}</b> ${c.summary}`).join("<br>") || "—";
     const updated = report.updated.join(", ") || "—";
+    const attached = (report.attached || []).map((a) => `${escapeHtml(a.filename)} → <b>${a.key}</b>`).join("<br>");
     const errors = report.errors.map((e) => `<div class="stage-error">${e.op}: ${e.error}</div>`).join("");
     const warnings = (report.warnings || []).map((w) => `<div class="muted">⚠ ${escapeHtml(w.warning || w)}</div>`).join("");
     openModal(`
       <h3>${report.errors.length ? "Pushed with errors" : "✓ Pushed to Jira"}</h3>
       <div class="field"><label>Created</label><div>${created}</div></div>
       <div class="field"><label>Updated</label><div>${updated}</div></div>
+      ${attached ? `<div class="field"><label>Attached</label><div>${attached}</div></div>` : ""}
       ${errors ? `<div class="field"><label>Errors (remain staged)</label>${errors}</div>` : ""}
       ${warnings ? `<div class="field"><label>Warnings</label>${warnings}</div>` : ""}
       <div class="modal-actions"><button class="primary" onclick="closeModalBtn()">Done</button></div>`);

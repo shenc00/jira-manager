@@ -13,6 +13,7 @@ tempIds to real keys), then apply updates, then add comments / transitions.
 """
 from __future__ import annotations
 
+import base64
 import json
 import secrets
 from pathlib import Path
@@ -90,6 +91,22 @@ class StagingStore:
         self._save()
         return op
 
+    def stage_attachment(self, ref: str, filename: str,
+                         content_type: str | None, content: bytes) -> dict:
+        """Stage a file to attach to ``ref`` (a real key or a create tempId)
+        once it exists. The bytes are held base64-encoded in staging."""
+        op = {
+            "id": secrets.token_hex(4),
+            "kind": "attachment",
+            "ref": ref,
+            "filename": filename,
+            "contentType": content_type or "application/octet-stream",
+            "data": base64.b64encode(content).decode("ascii"),
+        }
+        self.ops.append(op)
+        self._save()
+        return op
+
     # -- push ---------------------------------------------------------------
 
     def _build_fields(self, data: dict, parent_key: str | None) -> dict:
@@ -121,7 +138,8 @@ class StagingStore:
         that succeed are removed from staging; failures remain so they can be
         retried or removed.
         """
-        report = {"created": [], "updated": [], "errors": [], "warnings": []}
+        report = {"created": [], "updated": [], "attached": [], "errors": [],
+                  "warnings": []}
         temp_to_real: dict[str, str] = {}
         remaining: list[dict] = []
 
@@ -193,6 +211,29 @@ class StagingStore:
                 report["updated"].append(key)
                 for w in warnings:
                     report["warnings"].append({"key": key, "warning": w})
+            except Exception as exc:  # noqa: BLE001
+                op["error"] = str(exc)
+                remaining.append(op)
+                report["errors"].append({"op": op["id"], "error": str(exc)})
+
+        # Attachments: upload after creates/updates so a tempId ref resolves to
+        # the real key that was just created.
+        attachments = [o for o in self.ops if o["kind"] == "attachment"]
+        for op in attachments:
+            ref = op["ref"]
+            key = temp_to_real.get(ref, ref)
+            if key.startswith("temp:"):
+                op["error"] = "target issue was not created"
+                remaining.append(op)
+                report["errors"].append(
+                    {"op": op["id"], "error": "target issue was not created"})
+                continue
+            try:
+                content = base64.b64decode(op["data"])
+                client.add_attachment(key, op["filename"], content,
+                                      op.get("contentType"))
+                report["attached"].append(
+                    {"key": key, "filename": op["filename"]})
             except Exception as exc:  # noqa: BLE001
                 op["error"] = str(exc)
                 remaining.append(op)

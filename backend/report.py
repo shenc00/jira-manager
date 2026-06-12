@@ -150,8 +150,8 @@ def gather(client: JiraClient, year: int, month: int,
 
     A story (and its epic) is included if ANY of these hold:
       * the epic is assigned to the user, or
-      * the story itself is assigned to the user, or
-      * the story holds a sub-task assigned to the user.
+      * the story itself is assigned to or reported by the user, or
+      * the story holds a sub-task assigned to or reported by the user.
     In every case the story is only shown when it has at least one sub-task
     whose Target Completion Date falls in the selected month; all such
     sub-tasks are then listed regardless of who they are assigned to.
@@ -178,9 +178,11 @@ def gather(client: JiraClient, year: int, month: int,
             if not (ch["fields"].get("issuetype") or {}).get("subtask"):
                 story_keys.add(ch["key"])
 
-    #    (b) stories that hold a sub-task assigned to the user (with in-month target)
-    for s in client.search(f"assignee = {who} AND parent is not EMPTY",
-                           fields=["parent", "issuetype", tgt]):
+    #    (b) stories that hold a sub-task assigned to / reported by the user
+    #        (with an in-month target).
+    for s in client.search(
+            f"(assignee = {who} OR reporter = {who}) AND parent is not EMPTY",
+            fields=["parent", "issuetype", tgt]):
         if not (s["fields"].get("issuetype") or {}).get("subtask"):
             continue
         if _in_month(s["fields"].get(tgt), year, month):
@@ -188,10 +190,11 @@ def gather(client: JiraClient, year: int, month: int,
             if parent:
                 story_keys.add(parent)
 
-    #    (c) stories assigned directly to the user (epic/sub-tasks may not be).
-    #        Their in-month sub-tasks should still surface in the report.
-    for st in client.search(f"assignee = {who} AND issuetype != Epic",
-                            fields=["issuetype"]):
+    #    (c) stories assigned to / reported by the user directly (epic/sub-tasks
+    #        may not be). Their in-month sub-tasks should still surface.
+    for st in client.search(
+            f"(assignee = {who} OR reporter = {who}) AND issuetype != Epic",
+            fields=["issuetype"]):
         if not (st["fields"].get("issuetype") or {}).get("subtask"):
             story_keys.add(st["key"])
 

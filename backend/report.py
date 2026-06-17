@@ -276,9 +276,9 @@ def month_label(year: int, month: int) -> str:
 
 # --- PowerPoint rendering --------------------------------------------------
 
-COLS = ["Epic", "Story / Sub-task", "Start", "Target end", "Status",
+COLS = ["Story / Sub-task", "Start", "Target end", "Status",
         "Progress", "Responsible", "Reported by", "Recent comments (4 wks)"]
-COL_WIDTHS = [1.6, 2.4, 0.75, 0.85, 0.85, 0.9, 1.1, 1.1, 2.8]  # ~12.35 on 13.33 slide
+COL_WIDTHS = [3.4, 0.8, 0.9, 0.9, 1.0, 1.2, 1.15, 3.0]  # ~12.35 on 13.33 slide
 
 
 def _set_cell(cell, runs, *, bold=False, size=9, color=DARK, fill=None,
@@ -305,50 +305,51 @@ def _set_cell(cell, runs, *, bold=False, size=9, color=DARK, fill=None,
         r.font.color.rgb = color
 
 
-def build_pptx(epics: list[dict], year: int, month: int,
-               owner: str | None = None) -> bytes:
-    title_suffix = f"  —  {owner}" if owner else ""
-    prs = Presentation()
-    prs.slide_width = Inches(13.333)
-    prs.slide_height = Inches(7.5)
-    slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank
-
-    # Title
+def _add_title(slide, text: str) -> None:
     title_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.2), Inches(12.5), Inches(0.7))
     tp = title_box.text_frame.paragraphs[0]
+    tp.word_wrap = True
     run = tp.add_run()
-    run.text = f"Monthly Report – {month_label(year, month)}{title_suffix}"
+    run.text = text
     run.font.size = Pt(24)
     run.font.bold = True
     run.font.color.rgb = HEADER_BG
 
-    # Flatten to rows, tracking epic/story spans
-    flat = []  # (epic, story, sub) with markers for first-of-group
-    for ep in epics:
-        e_first = True
-        e_rowspan = sum(len(st["subs"]) for st in ep["stories"])
-        for st in ep["stories"]:
-            s_first = True
-            for sub in st["subs"]:
-                flat.append({
-                    "epic": ep, "story": st, "sub": sub,
-                    "e_first": e_first, "e_span": e_rowspan,
-                    "s_first": s_first, "s_span": len(st["subs"]),
-                })
-                e_first = False
-                s_first = False
+
+def _render_epic_slide(prs, ep: dict, year: int, month: int,
+                       title_suffix: str) -> None:
+    """Render a single epic onto its own slide."""
+    slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank
+
+    etitle = f'{ep["key"]}: {ep["summary"]}' if ep["key"] else ep["summary"]
+    _add_title(slide, f"{month_label(year, month)} – {etitle}{title_suffix}")
+
+    if ep["description"]:
+        desc_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.9), Inches(12.5), Inches(0.5))
+        dtf = desc_box.text_frame
+        dtf.word_wrap = True
+        dr = dtf.paragraphs[0].add_run()
+        dr.text = ep["description"]
+        dr.font.size = Pt(11)
+        dr.font.color.rgb = DARK
+
+    table_top = 1.45 if ep["description"] else 1.05
+
+    # Flatten this epic's stories -> sub-tasks into table rows.
+    flat = []
+    for st in ep["stories"]:
+        s_first = True
+        for sub in st["subs"]:
+            flat.append({"story": st, "sub": sub, "s_first": s_first})
+            s_first = False
+
+    if not flat:
+        return
 
     n_rows = len(flat) + 1  # + header
-    if not flat:
-        box = slide.shapes.add_textbox(Inches(0.4), Inches(1.2), Inches(12), Inches(1))
-        box.text_frame.paragraphs[0].add_run().text = (
-            f"No sub-tasks with a Target Completion Date in {month_label(year, month)}."
-        )
-        out = io.BytesIO(); prs.save(out); return out.getvalue()
-
     rows_h = min(0.55, max(0.28, 5.8 / len(flat)))
     table_h = Inches(0.4 + rows_h * len(flat))
-    gf = slide.shapes.add_table(n_rows, len(COLS), Inches(0.4), Inches(1.05),
+    gf = slide.shapes.add_table(n_rows, len(COLS), Inches(0.4), Inches(table_top),
                                 Inches(sum(COL_WIDTHS)), table_h)
     table = gf.table
     table.first_row = True
@@ -363,16 +364,7 @@ def build_pptx(epics: list[dict], year: int, month: int,
     # Body
     for idx, row in enumerate(flat):
         r = idx + 1
-        ep, st, sub = row["epic"], row["story"], row["sub"]
-        # Epic cell (filled on first row, merged across span)
-        if row["e_first"]:
-            etitle = f'{ep["key"]}: {ep["summary"]}' if ep["key"] else ep["summary"]
-            lines = [(etitle, True)]
-            if ep["description"]:
-                lines.append((ep["description"], False))
-            _set_cell(table.cell(r, 0), lines, size=9)
-        else:
-            _set_cell(table.cell(r, 0), "", size=9)
+        st, sub = row["story"], row["sub"]
         # Story / sub-task cell: story header (first row of story) + sub-task line
         story_lines = []
         if row["s_first"]:
@@ -380,15 +372,15 @@ def build_pptx(epics: list[dict], year: int, month: int,
             if st.get("description"):
                 story_lines.append((st["description"], False))
         story_lines.append((f'↳ {sub["key"]}: {sub["summary"]}', False))
-        _set_cell(table.cell(r, 1), story_lines, size=9)
-        _set_cell(table.cell(r, 2), sub["start"], size=8, align=PP_ALIGN.CENTER)
-        _set_cell(table.cell(r, 3), sub["end"], size=8, align=PP_ALIGN.CENTER)
-        _set_cell(table.cell(r, 4), [(sub["rag"], True)], size=8, color=WHITE,
+        _set_cell(table.cell(r, 0), story_lines, size=9)
+        _set_cell(table.cell(r, 1), sub["start"], size=8, align=PP_ALIGN.CENTER)
+        _set_cell(table.cell(r, 2), sub["end"], size=8, align=PP_ALIGN.CENTER)
+        _set_cell(table.cell(r, 3), [(sub["rag"], True)], size=8, color=WHITE,
                   fill=sub["_color"], align=PP_ALIGN.CENTER)
-        _set_cell(table.cell(r, 5), sub.get("status", ""), size=8,
+        _set_cell(table.cell(r, 4), sub.get("status", ""), size=8,
                   align=PP_ALIGN.CENTER)
-        _set_cell(table.cell(r, 6), sub["who"], size=8)
-        _set_cell(table.cell(r, 7), sub.get("reporter", "\u2014"), size=8)
+        _set_cell(table.cell(r, 5), sub["who"], size=8)
+        _set_cell(table.cell(r, 6), sub.get("reporter", "\u2014"), size=8)
         updates = sub.get("updates") or []
         if updates:
             fb = " (latest, none in 4 wks)" if sub.get("commentsFallback") else ""
@@ -396,17 +388,32 @@ def build_pptx(epics: list[dict], year: int, month: int,
             for u in updates:
                 lines.append((u["text"], False))
                 lines.append(("- {0}, {1}{2}".format(u["author"], u["date"], fb), False))
-            _set_cell(table.cell(r, 8), lines, size=7, color=DARK)
+            _set_cell(table.cell(r, 7), lines, size=7, color=DARK)
         else:
-            _set_cell(table.cell(r, 8), [("No comments", False)], size=7, color=GREY)
+            _set_cell(table.cell(r, 7), [("No comments", False)], size=7, color=GREY)
 
-    # Merge epic cells per group
-    r = 1
-    for ep in epics:
-        span = sum(len(st["subs"]) for st in ep["stories"])
-        if span > 1:
-            table.cell(r, 0).merge(table.cell(r + span - 1, 0))
-        r += span
+
+def build_pptx(epics: list[dict], year: int, month: int,
+               owner: str | None = None) -> bytes:
+    title_suffix = f"  —  {owner}" if owner else ""
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+
+    rendered = [ep for ep in epics if any(st["subs"] for st in ep["stories"])]
+
+    if not rendered:
+        slide = prs.slides.add_slide(prs.slide_layouts[6])  # blank
+        _add_title(slide, f"Monthly Report – {month_label(year, month)}{title_suffix}")
+        box = slide.shapes.add_textbox(Inches(0.4), Inches(1.2), Inches(12), Inches(1))
+        box.text_frame.paragraphs[0].add_run().text = (
+            f"No sub-tasks with a Target Completion Date in {month_label(year, month)}."
+        )
+        out = io.BytesIO(); prs.save(out); return out.getvalue()
+
+    # One epic per slide.
+    for ep in rendered:
+        _render_epic_slide(prs, ep, year, month, title_suffix)
 
     out = io.BytesIO()
     prs.save(out)

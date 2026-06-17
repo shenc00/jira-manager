@@ -27,6 +27,11 @@
   <main>
     <section id="tree-pane">
       <h2>My epics &amp; tasks</h2>
+      <div class="tree-search">
+        <input type="search" id="tree-search" placeholder="🔍 Search epics, stories, sub-tasks…"
+               title="Filter the tree by key, summary, type or status" autocomplete="off">
+        <button id="tree-search-clear" class="tree-search-clear hidden" title="Clear search">✕</button>
+      </div>
       <div id="tree" class="tree"><p class="muted">Loading…</p></div>
     </section>
 

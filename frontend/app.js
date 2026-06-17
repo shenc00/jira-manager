@@ -182,13 +182,44 @@ function backToMe() {
   loadTree(true);
 }
 
+// ---------- tree search / filter ----------
+let searchTerm = "";   // current filter (lowercased); "" = show everything
+
+// Does this single node match the search term?
+function nodeMatches(node, term) {
+  return [node.key, node.summary, node.type, node.status]
+    .some((v) => (v || "").toLowerCase().includes(term));
+}
+
+// Keep any node whose own text matches, or that has a matching descendant.
+// A node that matches itself keeps its full subtree; a node kept only because
+// of a descendant keeps just the path to that descendant.
+function pruneTree(nodes, term) {
+  const out = [];
+  for (const n of nodes) {
+    const selfHit = nodeMatches(n, term);
+    const kids = n.children && n.children.length ? pruneTree(n.children, term) : [];
+    if (selfHit) out.push(n);            // keep original children intact
+    else if (kids.length) out.push({ ...n, children: kids });
+  }
+  return out;
+}
+
 function renderTree(nodes) {
   if (!nodes || !nodes.length) {
     $("#tree").innerHTML = `<p class="muted">No epics or tasks assigned to you.</p>`;
     return;
   }
+  let toRender = nodes;
+  if (searchTerm) {
+    toRender = pruneTree(nodes, searchTerm);
+    if (!toRender.length) {
+      $("#tree").innerHTML = `<p class="muted">No items match “${escapeHtml(searchTerm)}”.</p>`;
+      return;
+    }
+  }
   const root = document.createElement("ul");
-  nodes.forEach((n) => root.appendChild(renderNode(n)));
+  toRender.forEach((n) => root.appendChild(renderNode(n)));
   $("#tree").innerHTML = "";
   $("#tree").appendChild(root);
 }
@@ -199,7 +230,9 @@ function renderNode(node) {
   row.className = "node-row" + (node.key === selectedKey ? " selected" : "");
 
   const hasKids = node.children && node.children.length;
-  const isCollapsed = collapsed.has(node.key);
+  // While searching, force every branch open so matches are always visible.
+  const isCollapsed = !searchTerm && collapsed.has(node.key);
+  if (searchTerm && nodeMatches(node, searchTerm)) row.classList.add("search-match");
 
   const toggle = document.createElement("span");
   toggle.className = "toggle" + (hasKids ? "" : " leaf");
@@ -1148,6 +1181,23 @@ $("#btn-refresh").onclick = async () => {
 $("#btn-review").onclick = reviewChanges;
 $("#btn-onhold").onclick = () => runOnHoldScan({ manual: true });
 $("#chk-completed").onchange = () => loadTree(true);
+
+// ---------- tree search wiring ----------
+function applySearch(raw) {
+  searchTerm = (raw || "").trim().toLowerCase();
+  $("#tree-search-clear").classList.toggle("hidden", !searchTerm);
+  loadTreeFromCacheRerender();   // filter the already-loaded tree, no Jira hit
+}
+$("#tree-search").addEventListener("input", (e) => applySearch(e.target.value));
+$("#tree-search").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { e.target.value = ""; applySearch(""); }
+});
+$("#tree-search-clear").onclick = () => {
+  const box = $("#tree-search");
+  box.value = "";
+  applySearch("");
+  box.focus();
+};
 
 (async function init() {
   await loadMeta();

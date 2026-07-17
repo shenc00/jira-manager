@@ -41,6 +41,10 @@ locally and only written to Jira when you review and push**.
 - 🧹 **Auto-cancel stale on-hold** — items in "On Hold" for more than a
   threshold (default 6 months) can be transitioned to Cancelled automatically,
   with a safety cap and an audit log.
+- 🔁 **Sprint Change** — one click on a slipped story clones it and its open,
+  overdue-or-due-today sub-tasks into a new **`(Iter N)`** batch with a fresh
+  30-day Target Completion Date, and stages the originals as **Done**. Staged
+  like everything else — nothing changes in Jira until you push.
 - 📊 **Monthly Report → PowerPoint** — a one-slide table of a month's sub-tasks
   (by Target Completion Date) grouped by epic/story. **Pick any month**
   (prev/next/this-month), and each row shows a **RAG status**, the raw Jira
@@ -360,6 +364,24 @@ natural child (epic → story → sub-task), each auto-linked to its parent, and
 finally asks whether to **close the session and upload all changes**. New epics
 default to **In Progress** status and **dark_orange** colour. Sub-tasks require
 a parent.
+
+### Sprint Change (clone a slipped story into the next iteration)
+Open a story or task that's slipped — open, with a Target Completion Date on or
+before today — and click **🔁 Sprint Change** in its detail panel. This:
+- Clones the story (title suffixed **`(Iter 1)`**, or **`(Iter N+1)`** if it
+  already ends in `(Iter N)`) and every one of its **open** sub-tasks whose
+  Target Completion Date is on or before today. Sub-tasks with no date, or a
+  future date, are left out.
+- Copies description, assignee, priority, labels and the other critical dates
+  (Start, Development End, UAT Start/End) as-is; the clone links to the
+  original's epic (story) or to the new story clone (sub-tasks). Target
+  Completion Date is **not** copied — it's set to **today + 30 days** on every
+  clone.
+- Stages the original story and its due sub-tasks as **Done**, since they're
+  superseded by the clones.
+
+Everything above is **staged only** — review it (and discard if needed) in
+**Review changes**, same as any other edit, before pushing.
 
 ### Review & push
 **Review changes** (top right, with a count badge) lists every staged

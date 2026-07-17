@@ -6,6 +6,7 @@ editmeta/createmeta rather than assuming every field is writable everywhere.
 """
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 
 # Curated fields surfaced in the item panel, in display order.
@@ -91,3 +92,31 @@ def due_flag(target, today: date | None = None) -> tuple[str | None, int | None]
     if n <= 3:
         return "soon", n
     return None, n
+
+
+# --- Sprint Change title suffix --------------------------------------------
+
+_ITER_RE = re.compile(r"^(.*?)\s*\(Iter (\d+)\)$")
+
+
+def next_iter_title(summary: str) -> str:
+    """Bump a trailing "(Iter N)" suffix, or append "(Iter 1)" if absent.
+
+    "Fix login bug" -> "Fix login bug (Iter 1)"
+    "Fix login bug (Iter 1)" -> "Fix login bug (Iter 2)"
+    """
+    summary = (summary or "").strip()
+    m = _ITER_RE.match(summary)
+    if m:
+        base, n = m.group(1), int(m.group(2))
+        return f"{base} (Iter {n + 1})"
+    return f"{summary} (Iter 1)"
+
+
+if __name__ == "__main__":
+    assert next_iter_title("Fix login bug") == "Fix login bug (Iter 1)"
+    assert next_iter_title("Fix login bug (Iter 1)") == "Fix login bug (Iter 2)"
+    assert next_iter_title("Fix login bug (Iter 9)") == "Fix login bug (Iter 10)"
+    assert next_iter_title("  Spaced  (Iter 3)  ") == "Spaced (Iter 4)"
+    assert next_iter_title("") == " (Iter 1)"
+    print("ok")

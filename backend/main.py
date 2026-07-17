@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import io
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -345,6 +345,83 @@ def _validate_local_fields(c, project: str, data: dict) -> None:
                 status_code=422,
                 detail=f"'{data.get('assignedGroupName') or group_id}' is not "
                        f"a valid assignment group.")
+
+
+@app.post("/api/issue/{key}/sprint-change")
+def sprint_change(key: str):
+    """Clone an open story/task and its open, due sub-tasks into a new
+    "(Iter N)" batch with a fresh 30-day target completion date, and stage
+    the originals as Done. Staged only — nothing is pushed to Jira until
+    the user reviews and pushes."""
+    c = client()
+    try:
+        story = c.clone_source(key)
+    except JiraError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    if story["subtask"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Sprint Change only works on stories/tasks, not sub-tasks.")
+    if story["statusCategory"] == "done":
+        raise HTTPException(status_code=400, detail=f"{key} is already Done.")
+
+    today = date.today()
+    story_due = fields_module.to_date(story["targetCompletion"])
+    if story_due is None or story_due > today:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{key} has no Target Completion Date on or before today.")
+
+    try:
+        child_keys = c.open_children_due(key, today)
+    except JiraError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    new_target = (today + timedelta(days=30)).isoformat()
+
+    def clone_data(src: dict, parent_ref: str | None) -> dict:
+        data: dict[str, Any] = {
+            "project": src["project"],
+            "issuetype": src["issuetype"],
+            "summary": fields_module.next_iter_title(src["summary"]),
+            "targetCompletion": new_target,
+        }
+        if src.get("description"):
+            data["description"] = src["description"]
+        if parent_ref:
+            data["parentRef"] = parent_ref
+        if src.get("assigneeId"):
+            data["assigneeId"] = src["assigneeId"]
+        if src.get("priority"):
+            data["priority"] = src["priority"]
+        if src.get("labels"):
+            data["labels"] = src["labels"]
+        if src.get("critical"):
+            data["custom"] = src["critical"]
+        return data
+
+    story_op = staging.stage_create(clone_data(story, story.get("parentKey")))
+    subtasks: list[dict] = []
+    for child_key in child_keys:
+        try:
+            sub = c.clone_source(child_key)
+        except JiraError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+        op = staging.stage_create(clone_data(sub, story_op["tempId"]))
+        subtasks.append({"tempId": op["tempId"], "summary": sub["summary"]})
+
+    # Originals are superseded by their clones, so stage them as Done too —
+    # still staged, not pushed, like every other write in this app.
+    staging.stage_update(key, {"status": "Done"})
+    for child_key in child_keys:
+        staging.stage_update(child_key, {"status": "Done"})
+
+    return {
+        "story": {"tempId": story_op["tempId"], "summary": story["summary"]},
+        "subtasks": subtasks,
+        "count": len(staging.all()),
+    }
 
 
 @app.post("/api/stage/update/{key}")

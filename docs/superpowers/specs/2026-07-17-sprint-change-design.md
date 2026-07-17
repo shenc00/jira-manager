@@ -48,12 +48,22 @@ tempId-chaining mechanism (the same one epic→story→sub-task creation already
 uses) — nothing touches Jira until the user reviews and pushes, matching
 every other write path in this app.
 
+## Originals
+
+The story and each cloned sub-task are superseded by their `(Iter N)` clone,
+so both are staged as a status transition to `Done` (via the existing
+`StagingStore.stage_update()` / `changes["status"]` mechanism — the same one
+the manual Status dropdown already uses). This is a *staged* update like
+everything else here: nothing changes in Jira until the user reviews and
+pushes, and it can be discarded from the Review changes modal.
+
 ## API
 
 `POST /api/issue/{key}/sprint-change`
 
 Response: `{"story": {"tempId", "key", "summary"}, "subtasks": [...], "count"}`
-(count = total staged ops, for the header badge). 400 on ineligibility.
+(count = total staged ops, for the header badge; includes the two clone
+creates plus the Done updates on the originals). 400 on ineligibility.
 
 ## Frontend
 
@@ -67,5 +77,6 @@ Response: `{"story": {"tempId", "key", "summary"}, "subtasks": [...], "count"}`
 - Jira's native "Components" field (not currently modeled anywhere in this
   app) — "all components" in the request was clarified to mean "all fields
   the app already models," not that field.
-- Any change to the original story/sub-tasks.
+- Any field change to the original story/sub-tasks beyond the Done status
+  transition described above (no summary/description/date edits, etc.).
 - Bulk / multi-story sprint change.

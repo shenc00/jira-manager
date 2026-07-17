@@ -494,6 +494,61 @@ class JiraClient:
             "attachments": attachments,
         }
 
+    def clone_source(self, key: str) -> dict:
+        """Fetch the fields needed to clone an issue for Sprint Change.
+
+        Unlike ``get_issue`` (built for the UI detail panel), this returns
+        raw values suited for feeding straight into ``StagingStore.stage_create``
+        (e.g. ``assigneeId`` instead of a display name).
+        """
+        field_ids = (
+            ["summary", "description", "issuetype", "status", "assignee",
+             "priority", "labels", "parent", "project"]
+            + fields_mod.CRITICAL_IDS
+        )
+        data = self._request("GET", f"/issue/{key}?fields={','.join(field_ids)}")
+        f = data.get("fields", {})
+        status = f.get("status") or {}
+        assignee = f.get("assignee") or {}
+        critical = {
+            fid: f.get(fid)
+            for fid in fields_mod.CRITICAL_IDS
+            if fid != fields_mod.TARGET_COMPLETION_FIELD and f.get(fid)
+        }
+        return {
+            "key": data["key"],
+            "summary": f.get("summary", ""),
+            "description": adf_to_text(f.get("description")),
+            "issuetype": (f.get("issuetype") or {}).get("name", ""),
+            "subtask": bool((f.get("issuetype") or {}).get("subtask")),
+            "statusCategory": (status.get("statusCategory") or {}).get("key", ""),
+            "project": (f.get("project") or {}).get("key", ""),
+            "parentKey": (f.get("parent") or {}).get("key"),
+            "assigneeId": assignee.get("accountId"),
+            "priority": (f.get("priority") or {}).get("name", ""),
+            "labels": f.get("labels", []),
+            "critical": critical,
+            "targetCompletion": f.get(fields_mod.TARGET_COMPLETION_FIELD),
+        }
+
+    def open_children_due(self, parent_key: str, on_or_before: date) -> list[str]:
+        """Keys of ``parent_key``'s open sub-tasks due on or before a date.
+
+        "Open" = statusCategory != Done. "Due" = Target Completion Date is
+        set and <= ``on_or_before``. A sub-task with no Target Completion
+        Date is excluded (nothing to compare).
+        """
+        issues = self.search(f'parent = "{parent_key}" ORDER BY created')
+        keys: list[str] = []
+        for issue in issues:
+            if self._is_done(issue):
+                continue
+            due = fields_mod.to_date(
+                issue.get("fields", {}).get(fields_mod.TARGET_COMPLETION_FIELD))
+            if due is not None and due <= on_or_before:
+                keys.append(issue["key"])
+        return keys
+
     def get_labels(self) -> list[str]:
         """All labels defined in the instance, for the selection dropdown."""
         labels: list[str] = []

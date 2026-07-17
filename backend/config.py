@@ -62,6 +62,9 @@ STAGING_FILE = DATA_DIR / "staging.json"
 # Audit trail of every auto-cancellation (one JSON line per item).
 AUDIT_LOG = DATA_DIR / "auto_cancel.log"
 
+# Local overlay for Component / Developer / Assigned Group (see local_fields.py).
+LOCAL_FIELDS_FILE = DATA_DIR / "local_fields.json"
+
 
 def missing_config() -> list[str]:
     """Return the names of required settings that are not set."""

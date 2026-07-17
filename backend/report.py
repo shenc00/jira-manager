@@ -18,6 +18,7 @@ from pptx.util import Inches, Pt
 
 from . import fields as fields_mod
 from .jira_client import JiraClient, adf_to_text
+from .local_fields import LocalFieldsStore
 
 START_DATE_FIELD = "customfield_10015"
 
@@ -117,7 +118,8 @@ def _in_month(value, year: int, month: int) -> bool:
     return bool(d and d.year == year and d.month == month)
 
 
-def _build_row(client: JiraClient, s: dict, tgt: str, today) -> dict:
+def _build_row(client: JiraClient, local_fields: LocalFieldsStore, s: dict,
+               tgt: str, today) -> dict:
     """Build one sub-task row (RAG status + recent comments)."""
     sf = s["fields"]
     status_name = (sf.get("status") or {}).get("name", "")
@@ -129,6 +131,7 @@ def _build_row(client: JiraClient, s: dict, tgt: str, today) -> dict:
         {"text": _flatten(c["text"], 180), "author": c["author"], "date": c["date"]}
         for c in cmts["recent"] if c["text"].strip()
     ]
+    lf = local_fields.get(s["key"])
     return {
         "key": s["key"],
         "summary": sf.get("summary", ""),
@@ -140,13 +143,16 @@ def _build_row(client: JiraClient, s: dict, tgt: str, today) -> dict:
         "_color": colour,
         "who": (sf.get("assignee") or {}).get("displayName", "Unassigned"),
         "reporter": (sf.get("reporter") or {}).get("displayName", "\u2014"),
+        "component": (lf.get("component") or {}).get("name", ""),
+        "developer": (lf.get("developer") or {}).get("displayName", ""),
+        "assignedGroup": (lf.get("assignedGroup") or {}).get("name", ""),
         "updates": updates,
         "commentsFallback": cmts.get("fallback", False),
     }
 
 
 def gather(client: JiraClient, year: int, month: int,
-           assignee: str | None = None) -> list[dict]:
+           local_fields: LocalFieldsStore, assignee: str | None = None) -> list[dict]:
     """Collect epics -> stories -> in-month sub-tasks with RAG status.
 
     A story (and its epic) is included if ANY of these hold:
@@ -243,7 +249,7 @@ def gather(client: JiraClient, year: int, month: int,
             "summary": sf.get("summary", ""),
             "description": _summarize_description(adf_to_text(sf.get("description"))),
             "progress": f"{done}/{total} sub-tasks done",
-            "subs": [_build_row(client, s, tgt, today) for s in month_subs],
+            "subs": [_build_row(client, local_fields, s, tgt, today) for s in month_subs],
         }
 
         ep_key = (sf.get("parent") or {}).get("key")
@@ -276,9 +282,10 @@ def month_label(year: int, month: int) -> str:
 
 # --- PowerPoint rendering --------------------------------------------------
 
-COLS = ["Story / Sub-task", "Start", "Target end", "Status",
-        "Progress", "Responsible", "Reported by", "Recent comments (4 wks)"]
-COL_WIDTHS = [3.4, 0.8, 0.9, 0.9, 1.0, 1.2, 1.15, 3.0]  # ~12.35 on 13.33 slide
+COLS = ["Story / Sub-task", "Component", "Developer", "Assigned Group",
+        "Start", "Target end", "Status", "Progress", "Responsible",
+        "Reported by", "Recent comments (4 wks)"]
+COL_WIDTHS = [2.6, 0.9, 1.0, 1.0, 0.7, 0.7, 0.8, 0.9, 1.0, 1.0, 1.7]  # ~12.3 on 13.33 slide
 
 
 def _set_cell(cell, runs, *, bold=False, size=9, color=DARK, fill=None,
@@ -373,14 +380,17 @@ def _render_epic_slide(prs, ep: dict, year: int, month: int,
                 story_lines.append((st["description"], False))
         story_lines.append((f'↳ {sub["key"]}: {sub["summary"]}', False))
         _set_cell(table.cell(r, 0), story_lines, size=9)
-        _set_cell(table.cell(r, 1), sub["start"], size=8, align=PP_ALIGN.CENTER)
-        _set_cell(table.cell(r, 2), sub["end"], size=8, align=PP_ALIGN.CENTER)
-        _set_cell(table.cell(r, 3), [(sub["rag"], True)], size=8, color=WHITE,
+        _set_cell(table.cell(r, 1), sub.get("component", ""), size=8)
+        _set_cell(table.cell(r, 2), sub.get("developer", ""), size=8)
+        _set_cell(table.cell(r, 3), sub.get("assignedGroup", ""), size=8)
+        _set_cell(table.cell(r, 4), sub["start"], size=8, align=PP_ALIGN.CENTER)
+        _set_cell(table.cell(r, 5), sub["end"], size=8, align=PP_ALIGN.CENTER)
+        _set_cell(table.cell(r, 6), [(sub["rag"], True)], size=8, color=WHITE,
                   fill=sub["_color"], align=PP_ALIGN.CENTER)
-        _set_cell(table.cell(r, 4), sub.get("status", ""), size=8,
+        _set_cell(table.cell(r, 7), sub.get("status", ""), size=8,
                   align=PP_ALIGN.CENTER)
-        _set_cell(table.cell(r, 5), sub["who"], size=8)
-        _set_cell(table.cell(r, 6), sub.get("reporter", "\u2014"), size=8)
+        _set_cell(table.cell(r, 8), sub["who"], size=8)
+        _set_cell(table.cell(r, 9), sub.get("reporter", "\u2014"), size=8)
         updates = sub.get("updates") or []
         if updates:
             fb = " (latest, none in 4 wks)" if sub.get("commentsFallback") else ""
@@ -388,9 +398,9 @@ def _render_epic_slide(prs, ep: dict, year: int, month: int,
             for u in updates:
                 lines.append((u["text"], False))
                 lines.append(("- {0}, {1}{2}".format(u["author"], u["date"], fb), False))
-            _set_cell(table.cell(r, 7), lines, size=7, color=DARK)
+            _set_cell(table.cell(r, 10), lines, size=7, color=DARK)
         else:
-            _set_cell(table.cell(r, 7), [("No comments", False)], size=7, color=GREY)
+            _set_cell(table.cell(r, 10), [("No comments", False)], size=7, color=GREY)
 
 
 def build_pptx(epics: list[dict], year: int, month: int,

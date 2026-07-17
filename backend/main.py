@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from . import config
 from . import fields as fields_module
 from .jira_client import JiraError, from_config
+from .local_fields import LocalFieldsStore
 from .staging import StagingStore
 
 # The Monthly Report needs python-pptx. If it isn't installed, the rest of the
@@ -41,6 +42,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 staging = StagingStore(config.STAGING_FILE)
+local_fields = LocalFieldsStore(config.LOCAL_FIELDS_FILE)
 
 # In-memory cache of the last fetched tree.
 _cache: dict[str, Any] = {"tree": None, "me": None}
@@ -71,6 +73,12 @@ class UpdateBody(BaseModel):
     custom: dict[str, Any] | None = None
     originalEstimate: str | None = None
     remainingEstimate: str | None = None
+    componentId: str | None = None
+    componentName: str | None = None
+    developerId: str | None = None
+    developerName: str | None = None
+    assignedGroupId: str | None = None
+    assignedGroupName: str | None = None
 
 
 class CreateBody(BaseModel):
@@ -88,6 +96,12 @@ class CreateBody(BaseModel):
     comment: str | None = None
     custom: dict[str, Any] | None = None
     epicColor: str | None = None
+    componentId: str | None = None
+    componentName: str | None = None
+    developerId: str | None = None
+    developerName: str | None = None
+    assignedGroupId: str | None = None
+    assignedGroupName: str | None = None
 
 
 # --- overlay of staged changes onto the cached tree ------------------------
@@ -124,6 +138,9 @@ def _overlay(tree: list[dict]) -> list[dict]:
             "type": d.get("issuetype", ""),
             "status": d.get("status", "(new)"),
             "assignee": "(new)",
+            "component": d.get("componentName"),
+            "developer": d.get("developerName"),
+            "assignedGroup": d.get("assignedGroupName"),
             "children": [],
             "staged": "new",
         }
@@ -140,6 +157,19 @@ def _overlay(tree: list[dict]) -> list[dict]:
         else:
             tree.append(node)
     return tree
+
+
+def _overlay_local_fields(tree: list[dict]) -> None:
+    """Annotate real (non-staged) nodes with Component/Developer/Assigned
+    Group from the local store, in place, so the tree can search/filter/
+    display them. Staged-new nodes already carry their values from _overlay()."""
+    for n in tree:
+        if not n["key"].startswith("temp:"):
+            lf = local_fields.get(n["key"])
+            n["component"] = (lf.get("component") or {}).get("name")
+            n["developer"] = (lf.get("developer") or {}).get("displayName")
+            n["assignedGroup"] = (lf.get("assignedGroup") or {}).get("name")
+        _overlay_local_fields(n["children"])
 
 
 # --- API routes ------------------------------------------------------------
@@ -178,7 +208,9 @@ def get_tree(refresh: bool = False, show_completed: bool = False,
     except JiraError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     # Only overlay local staged changes when looking at your own tree.
-    tree = _overlay(_cache["tree"]) if is_self else _cache["tree"]
+    import copy
+    tree = _overlay(_cache["tree"]) if is_self else copy.deepcopy(_cache["tree"] or [])
+    _overlay_local_fields(tree)
     return {
         "me": (_cache["me"] or {}).get("displayName", ""),
         "viewing": view["displayName"] if view else (_cache["me"] or {}).get("displayName", ""),
@@ -232,6 +264,18 @@ def get_labels():
         raise HTTPException(status_code=502, detail=str(exc))
 
 
+@app.get("/api/meta/components")
+def get_components(project: str):
+    c = client()
+    return {"components": c.project_components(project)}
+
+
+@app.get("/api/meta/groups")
+def get_groups(query: str = ""):
+    c = client()
+    return {"groups": c.search_groups(query)}
+
+
 @app.get("/api/meta/createfields")
 def get_create_fields(project: str, issuetype: str):
     """Which critical date fields can be set when creating this issue type."""
@@ -267,18 +311,57 @@ def get_issue(key: str):
     issue["staged_ops"] = [
         o for o in staging.all() if o.get("key") == key
     ]
+    lf = local_fields.get(key)
+    issue["component"] = lf.get("component")
+    issue["developer"] = lf.get("developer")
+    issue["assignedGroup"] = lf.get("assignedGroup")
     return issue
+
+
+def _validate_local_fields(c, project: str, data: dict) -> None:
+    """Referential-integrity check: a picked Component/Developer/Assigned
+    Group must still exist in Jira's live master list at staging time."""
+    component_id = data.get("componentId")
+    if component_id:
+        comps = c.project_components(project)
+        if not any(x["id"] == component_id for x in comps):
+            raise HTTPException(
+                status_code=422,
+                detail=f"'{data.get('componentName') or component_id}' is not "
+                       f"a valid component for project {project}.")
+
+    developer_id = data.get("developerId")
+    if developer_id and not c.check_assignable(project, developer_id):
+        raise HTTPException(
+            status_code=422,
+            detail=f"'{data.get('developerName') or developer_id}' is not an "
+                   f"approved developer for project {project}.")
+
+    group_id = data.get("assignedGroupId")
+    if group_id:
+        groups = c.search_groups(data.get("assignedGroupName", ""))
+        if not any(g["groupId"] == group_id for g in groups):
+            raise HTTPException(
+                status_code=422,
+                detail=f"'{data.get('assignedGroupName') or group_id}' is not "
+                       f"a valid assignment group.")
 
 
 @app.post("/api/stage/update/{key}")
 def stage_update(key: str, body: UpdateBody):
-    op = staging.stage_update(key, body.model_dump(exclude_none=True))
+    c = client()
+    changes = body.model_dump(exclude_none=True)
+    _validate_local_fields(c, key.split("-")[0], changes)
+    op = staging.stage_update(key, changes)
     return {"op": op, "count": len(staging.all())}
 
 
 @app.post("/api/stage/create")
 def stage_create(body: CreateBody):
-    op = staging.stage_create(body.model_dump(exclude_none=True))
+    c = client()
+    data = body.model_dump(exclude_none=True)
+    _validate_local_fields(c, data["project"], data)
+    op = staging.stage_create(data)
     return {"op": op, "count": len(staging.all())}
 
 
@@ -403,7 +486,7 @@ def report_data(year: int | None = None, month: int | None = None,
         view = _resolve_view(c, email)
         account = view["accountId"] if view else None
         owner = view["displayName"] if view else (c.myself() or {}).get("displayName", "")
-        epics = report_module.gather(c, y, m, assignee=account)
+        epics = report_module.gather(c, y, m, local_fields, assignee=account)
     except JiraError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     # strip the internal colour object before returning JSON
@@ -425,7 +508,7 @@ def report_pptx(year: int | None = None, month: int | None = None,
         view = _resolve_view(c, email)
         account = view["accountId"] if view else None
         owner = view["displayName"] if view else (c.myself() or {}).get("displayName", "")
-        epics = report_module.gather(c, y, m, assignee=account)
+        epics = report_module.gather(c, y, m, local_fields, assignee=account)
         data = report_module.build_pptx(epics, y, m, owner=owner)
     except JiraError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
@@ -507,7 +590,7 @@ async def stage_attachment(ref: str = Form(...), file: UploadFile = File(...)):
 @app.post("/api/push")
 def push():
     c = client()
-    report = staging.push(c)
+    report = staging.push(c, local_fields)
     # Force a refresh on next tree fetch so new/changed items show real data.
     _cache["tree"] = None
     return report

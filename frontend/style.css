@@ -166,6 +166,15 @@ section h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; 
 .staged-new { background: var(--new); }
 .staged-modified { background: var(--amber); }
 
+/* Component / Developer / Assigned Group tags on tree rows */
+.meta-tag {
+  font-size: 10px; color: var(--muted); border: 1px solid var(--border);
+  padding: 0 5px; border-radius: 3px; white-space: nowrap;
+}
+.meta-component { background: #eae6ff; border-color: #c0b6f2; color: #403294; }
+.meta-developer { background: #e6fcff; border-color: #b3f5ff; color: #00565c; }
+.meta-assignedGroup { background: #fff0e6; border-color: #ffd8be; color: #a54800; }
+
 /* Target-completion due highlighting */
 .node-row.due-soon { background: #fffae6; }
 .node-row.due-overdue { background: #ffebe6; }

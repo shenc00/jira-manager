@@ -187,7 +187,8 @@ let searchTerm = "";   // current filter (lowercased); "" = show everything
 
 // Does this single node match the search term?
 function nodeMatches(node, term) {
-  return [node.key, node.summary, node.type, node.status]
+  return [node.key, node.summary, node.type, node.status,
+          node.component, node.developer, node.assignedGroup]
     .some((v) => (v || "").toLowerCase().includes(term));
 }
 
@@ -261,6 +262,15 @@ function renderNode(node) {
   status.textContent = node.status || "";
 
   row.append(toggle, chip, key, summary, status);
+
+  [["component", node.component], ["developer", node.developer], ["assignedGroup", node.assignedGroup]]
+    .forEach(([kind, value]) => {
+      if (!value) return;
+      const tag = document.createElement("span");
+      tag.className = "meta-tag meta-" + kind;
+      tag.textContent = value;
+      row.appendChild(tag);
+    });
 
   // Highlight items at/over their Target Completion Date (working days).
   if (node.dueFlag) {
@@ -372,6 +382,11 @@ function renderIssueDetail(issue) {
       ${field("Priority", `<select id="f-priority">${priOpts}</select>`)}
     </div>
     ${field("Assignee", assigneeInput("f-assignee", issue.assignee && issue.assignee.displayName, issue.project))}
+    <div class="row">
+      ${field("Component", componentSelectHtml("f-component", issue.component && issue.component.name))}
+      ${field("Developer", assigneeInput("f-developer", issue.developer && issue.developer.displayName, issue.project))}
+    </div>
+    ${field("Assigned Group", groupInput("f-group", issue.assignedGroup && issue.assignedGroup.name))}
 
     ${criticalFieldsHtml(issue.critical)}
 
@@ -389,6 +404,9 @@ function renderIssueDetail(issue) {
       <button onclick="selectItem('${issue.key}')">Reset</button>
     </div>`;
   wireAssignee("f-assignee", issue.project);
+  wireAssignee("f-developer", issue.project);
+  wireGroup("f-group");
+  loadComponentOptions("f-component", issue.project);
   wireAttachImmediate(issue.key);
 }
 
@@ -573,12 +591,148 @@ function resolveAssignee(id) {
   return match ? match.accountId : null;
 }
 
+// Developer uses the same assignable-users widget as Assignee (Jira's
+// project-scoped assignable list doubles as the "approved developer" list).
+// This resolves both the accountId and the display name in one call.
+function resolveNamedAssignee(id) {
+  const accountId = resolveAssignee(id);
+  const input = document.getElementById(id);
+  return { id: accountId, name: accountId && input ? input.value.trim() : null };
+}
+
+// Component select ----------------------------------------------------------
+// A plain <select>, like Priority: current value shown as a "(no change)"
+// placeholder, real options for the issue's project loaded asynchronously.
+function componentSelectHtml(id, currentName) {
+  const placeholder = currentName ? `${escapeHtml(currentName)} (no change)` : "—";
+  return `<select id="${id}"><option value="">${placeholder}</option></select>`;
+}
+
+async function loadComponentOptions(selectId, project) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  try {
+    const { components } = await api(`/api/meta/components?project=${encodeURIComponent(project)}`);
+    const opts = (components || []).map((c) =>
+      `<option value="${escapeAttr(c.id)}" data-name="${escapeAttr(c.name)}">${escapeHtml(c.name)}</option>`
+    ).join("");
+    sel.insertAdjacentHTML("beforeend", opts);
+  } catch (e) { /* leave the placeholder-only select */ }
+}
+
+function collectComponent(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel || !sel.value) return { id: null, name: null };
+  const opt = sel.selectedOptions[0];
+  return { id: sel.value, name: opt ? opt.dataset.name : "" };
+}
+
+// Assigned Group search widget -----------------------------------------------
+// Same typeahead UX as Assignee, backed by Jira's group picker instead of
+// assignable users.
+function groupInput(id, current) {
+  return `<div class="assignee-wrap">
+            <input type="text" id="${id}" class="assignee-input"
+                   placeholder="${current ? escapeAttr("Currently: " + current) : "Search group…"}"
+                   data-groupid="" autocomplete="off">
+            <div id="${id}-menu" class="assignee-menu hidden"></div>
+          </div>`;
+}
+
+function wireGroup(id) {
+  const input = document.getElementById(id);
+  const menu = document.getElementById(id + "-menu");
+  if (!input || !menu) return;
+  let timer;
+  let activeIdx = -1;
+
+  function hide() { menu.classList.add("hidden"); activeIdx = -1; }
+  function show() { if (menu.children.length) menu.classList.remove("hidden"); }
+
+  function render(groups) {
+    input._groups = groups;
+    if (!groups.length) {
+      menu.innerHTML = `<div class="assignee-empty">No matching groups</div>`;
+      show();
+      return;
+    }
+    menu.innerHTML = groups.map((g, i) =>
+      `<div class="assignee-option" data-idx="${i}">${escapeHtml(g.name)}</div>`
+    ).join("");
+    activeIdx = -1;
+    show();
+  }
+
+  function pick(group) {
+    input.value = group.name;
+    input.dataset.groupid = group.groupId;
+    hide();
+  }
+
+  async function query(q) {
+    try {
+      const { groups } = await api(`/api/meta/groups?query=${encodeURIComponent(q || "")}`);
+      render(groups || []);
+    } catch (_) { hide(); }
+  }
+
+  input.addEventListener("focus", () => {
+    if (input._groups && input._groups.length) { show(); }
+    else { query(input.value.trim()); }
+  });
+
+  input.addEventListener("input", () => {
+    input.dataset.groupid = "";
+    clearTimeout(timer);
+    const q = input.value.trim();
+    timer = setTimeout(() => query(q), 250);
+  });
+
+  input.addEventListener("keydown", (e) => {
+    const opts = Array.from(menu.querySelectorAll(".assignee-option"));
+    if (!opts.length || menu.classList.contains("hidden")) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, opts.length - 1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+    } else if (e.key === "Enter") {
+      if (activeIdx >= 0) { e.preventDefault(); pick(input._groups[activeIdx]); return; }
+    } else if (e.key === "Escape") {
+      hide(); return;
+    } else { return; }
+    opts.forEach((o, i) => o.classList.toggle("active", i === activeIdx));
+    if (opts[activeIdx]) opts[activeIdx].scrollIntoView({ block: "nearest" });
+  });
+
+  menu.addEventListener("mousedown", (e) => {
+    const opt = e.target.closest(".assignee-option");
+    if (!opt) return;
+    e.preventDefault();
+    pick(input._groups[Number(opt.dataset.idx)]);
+  });
+
+  input.addEventListener("blur", () => setTimeout(hide, 150));
+}
+
+function resolveGroup(id) {
+  const input = document.getElementById(id);
+  if (!input || !input.value.trim()) return { id: null, name: null };
+  if (input.dataset.groupid) return { id: input.dataset.groupid, name: input.value.trim() };
+  const match = (input._groups || []).find((g) => g.name === input.value.trim());
+  return match ? { id: match.groupId, name: match.name } : { id: null, name: null };
+}
+
 // Collect edit form into a changes object
 function collectChanges() {
   const labels = collectLabels("f-labels");
   const labelsChanged =
     JSON.stringify([...labels].sort()) !== JSON.stringify([..._origLabels].sort());
   const tt = collectTimeTracking();
+  const component = collectComponent("f-component");
+  const developer = resolveNamedAssignee("f-developer");
+  const group = resolveGroup("f-group");
   return {
     summary: document.getElementById("f-summary").value.trim() || null,
     description: document.getElementById("f-desc").value,
@@ -590,6 +744,12 @@ function collectChanges() {
     custom: collectCustom(),
     originalEstimate: tt.originalEstimate || null,
     remainingEstimate: tt.remainingEstimate || null,
+    componentId: component.id,
+    componentName: component.name,
+    developerId: developer.id,
+    developerName: developer.name,
+    assignedGroupId: group.id,
+    assignedGroupName: group.name,
   };
 }
 
@@ -665,6 +825,11 @@ async function openCreateForm(category, parentRef) {
       </div>` : `<input type="hidden" id="c-status" value=""><input type="hidden" id="c-color" value="">`}
     <div id="c-critical"></div>
     ${field("Assignee", assigneeInput("c-assignee", "", defProj))}
+    <div class="row">
+      ${field("Component", componentSelectHtml("c-component", ""))}
+      ${field("Developer", assigneeInput("c-developer", "", defProj))}
+    </div>
+    ${field("Assigned Group", groupInput("c-group", ""))}
     ${field("Labels", labelsWidget("c-labels", []))}
     ${field("Attachments", `
       <ul class="attach-list" id="c-attach-list"></ul>
@@ -709,9 +874,20 @@ async function openCreateForm(category, parentRef) {
         : "";
     } catch (e) { box.innerHTML = ""; }
   }
+  // Components are project-scoped, so the list must reload on project change
+  // (unlike Assignee/Developer, which don't currently re-scope on the fly).
+  async function refreshComponents() {
+    const sel = document.getElementById("c-component");
+    if (!sel) return;
+    sel.innerHTML = `<option value="">—</option>`;
+    await loadComponentOptions("c-component", projSel.value);
+  }
   loadTypes();
-  projSel.onchange = loadTypes;
+  refreshComponents();
+  projSel.onchange = () => { loadTypes(); refreshComponents(); };
   wireAssignee("c-assignee", projSel.value);
+  wireAssignee("c-developer", projSel.value);
+  wireGroup("c-group");
 
   _pendingCreateFiles = [];
   wirePendingAttach();
@@ -864,6 +1040,9 @@ async function submitCreate(category, parentRef) {
   document.querySelectorAll("#c-critical [data-cf]").forEach((el) => {
     if (el.value) custom[el.dataset.cf] = el.value;
   });
+  const component = collectComponent("c-component");
+  const developer = resolveNamedAssignee("c-developer");
+  const group = resolveGroup("c-group");
   const body = {
     project: document.getElementById("c-project").value,
     issuetype: document.getElementById("c-type").value,
@@ -877,6 +1056,12 @@ async function submitCreate(category, parentRef) {
     epicColor: category === "Epic" ? epicColor : null,
     assigneeId: resolveAssignee("c-assignee"),
     custom: Object.keys(custom).length ? custom : null,
+    componentId: component.id,
+    componentName: component.name,
+    developerId: developer.id,
+    developerName: developer.name,
+    assignedGroupId: group.id,
+    assignedGroupName: group.name,
   };
   Object.keys(body).forEach((k) => body[k] == null && delete body[k]);
 

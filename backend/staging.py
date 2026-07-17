@@ -21,6 +21,7 @@ from typing import Any
 
 from . import fields as fields_mod
 from .jira_client import JiraClient, text_to_adf
+from .local_fields import LocalFieldsStore
 
 
 class StagingStore:
@@ -131,12 +132,14 @@ class StagingStore:
                 fields[field_id] = formatted
         return fields
 
-    def push(self, client: JiraClient) -> dict:
+    def push(self, client: JiraClient, local_fields: LocalFieldsStore) -> dict:
         """Apply all staged operations to Jira.
 
         Returns a report dict with created keys and any errors. Operations
         that succeed are removed from staging; failures remain so they can be
-        retried or removed.
+        retried or removed. Component/Developer/Assigned Group never reach
+        Jira's fields payload — they're committed to ``local_fields`` here,
+        once a create's real key is known / an update has succeeded.
         """
         report = {"created": [], "updated": [], "attached": [], "errors": [],
                   "warnings": []}
@@ -171,6 +174,9 @@ class StagingStore:
                         {"tempId": op["tempId"], "key": new_key,
                          "summary": data.get("summary", "")}
                     )
+                    local = self._extract_local_fields(data)
+                    if local:
+                        local_fields.set(new_key, local)
                     for w in self._apply_post_create(client, new_key, data):
                         report["warnings"].append({"key": new_key, "warning": w})
                     # Best-effort epic colour: the colour field often isn't on
@@ -211,6 +217,9 @@ class StagingStore:
                 report["updated"].append(key)
                 for w in warnings:
                     report["warnings"].append({"key": key, "warning": w})
+                local = self._extract_local_fields(op["changes"])
+                if local:
+                    local_fields.set(key, local)
             except Exception as exc:  # noqa: BLE001
                 op["error"] = str(exc)
                 remaining.append(op)
@@ -244,6 +253,24 @@ class StagingStore:
         return report
 
     # -- helpers ------------------------------------------------------------
+
+    @staticmethod
+    def _extract_local_fields(data: dict) -> dict:
+        """Pull Component/Developer/Assigned Group out of staged data or
+        changes. These are never part of a Jira ``fields`` payload — the
+        caller hands the result to ``LocalFieldsStore`` once the create/update
+        they rode along with has actually succeeded."""
+        out: dict[str, Any] = {}
+        if data.get("componentId"):
+            out["component"] = {"id": data["componentId"],
+                                "name": data.get("componentName", "")}
+        if data.get("developerId"):
+            out["developer"] = {"accountId": data["developerId"],
+                                "displayName": data.get("developerName", "")}
+        if data.get("assignedGroupId"):
+            out["assignedGroup"] = {"groupId": data["assignedGroupId"],
+                                    "name": data.get("assignedGroupName", "")}
+        return out
 
     @staticmethod
     def _apply_post_create(client: JiraClient, key: str, data: dict) -> list[str]:

@@ -230,6 +230,38 @@ class JiraClient:
         except JiraError:
             return []
 
+    def check_assignable(self, project_key: str, account_id: str) -> bool:
+        """Is ``account_id`` assignable in ``project_key``? Used to validate a
+        picked Developer against Jira's live user list before staging."""
+        path = (
+            f"/user/assignable/search?project={project_key}"
+            f"&accountId={requests.utils.quote(account_id)}&maxResults=1"
+        )
+        try:
+            return bool(self._request("GET", path))
+        except JiraError:
+            return False
+
+    def project_components(self, project_key: str) -> list[dict]:
+        """Components configured on a project, for the Component dropdown."""
+        try:
+            data = self._request("GET", f"/project/{project_key}/components")
+            return [{"id": c["id"], "name": c["name"]} for c in data]
+        except JiraError:
+            return []
+
+    def search_groups(self, query: str) -> list[dict]:
+        """Jira groups matching ``query``, for the Assigned Group dropdown."""
+        path = f"/groups/picker?query={requests.utils.quote(query or '')}&maxResults=20"
+        try:
+            data = self._request("GET", path)
+            return [
+                {"groupId": g.get("groupId"), "name": g.get("name", "")}
+                for g in data.get("groups", [])
+            ]
+        except JiraError:
+            return []
+
     # -- search / tree ------------------------------------------------------
 
     def search(self, jql: str, fields: list[str] | None = None) -> list[dict]:

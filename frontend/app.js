@@ -358,6 +358,10 @@ function renderIssueDetail(issue) {
 
   _origLabels = issue.labels || [];
 
+  const sprintChangeButton = ["Epic", "Sub-task", "Subtask"].includes(issue.type)
+    ? ""
+    : `<button onclick="sprintChange('${issue.key}')" title="Clone this story and its open, due sub-tasks into a new (Iter N) batch, and stage the originals as Done">🔁 Sprint Change</button>`;
+
   $("#detail").innerHTML = `
     ${stagedNote}${dueBanner}
     <h2>${issue.summary}</h2>
@@ -387,6 +391,7 @@ function renderIssueDetail(issue) {
     <div class="detail-actions">
       <button class="primary" onclick="stageIssueUpdate('${issue.key}', '${issue.project}')">Stage changes</button>
       <button onclick="selectItem('${issue.key}')">Reset</button>
+      ${sprintChangeButton}
     </div>`;
   wireAssignee("f-assignee", issue.project);
   wireAttachImmediate(issue.key);
@@ -607,9 +612,21 @@ async function stageIssueUpdate(key) {
   } catch (e) { toast(e.message, "error"); }
 }
 
+async function sprintChange(key) {
+  try {
+    const res = await api(`/api/issue/${encodeURIComponent(key)}/sprint-change`, {
+      method: "POST",
+    });
+    toast(`Staged: ${res.story.summary} + ${res.subtasks.length} sub-task(s). Originals staged as Done.`, "success");
+    refreshStageCount();
+    loadTree();
+  } catch (e) { toast(e.message, "error"); }
+}
+
 window.stageIssueUpdate = stageIssueUpdate;
 window.removeStaged = removeStaged;
 window.selectItem = selectItem;
+window.sprintChange = sprintChange;
 
 // ---------- create wizard ----------
 function newItemFlow() {

@@ -26,7 +26,7 @@
 **Interfaces:**
 - Produces: `next_iter_title(summary: str) -> str` — importable as `fields_module.next_iter_title` from `backend/main.py` (main.py already does `from . import fields as fields_module`).
 
-- [ ] **Step 1: Add the function and a manual self-check to `backend/fields.py`**
+- [x] **Step 1: Add the function and a manual self-check to `backend/fields.py`**
 
 Append this to the end of the file (after the existing `due_flag()` function, which currently ends at line 93):
 
@@ -68,14 +68,14 @@ import re
 from datetime import date, timedelta
 ```
 
-- [ ] **Step 2: Run the self-check**
+- [x] **Step 2: Run the self-check**
 
 Run: `python backend/fields.py`
 Expected output: `ok`
 
 (`fields.py` has no relative imports, so it runs standalone.)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add backend/fields.py
@@ -96,7 +96,7 @@ git commit -m "feat: add next_iter_title() helper for Sprint Change title suffix
   - `open_children_due(parent_key: str, on_or_before: date) -> list[str]` — keys of `parent_key`'s open sub-tasks whose Target Completion Date is set and `<= on_or_before`.
   - Both are consumed by `backend/main.py` in Task 3.
 
-- [ ] **Step 1: Add the two methods to `backend/jira_client.py`**
+- [x] **Step 1: Add the two methods to `backend/jira_client.py`**
 
 Insert immediately after line 464 (`        }`, the closing of `get_issue`'s return dict) and before line 465 (`    def get_labels(self) -> list[str]:`):
 
@@ -158,12 +158,12 @@ Insert immediately after line 464 (`        }`, the closing of `get_issue`'s ret
         return keys
 ```
 
-- [ ] **Step 2: Sanity-check the file still imports cleanly**
+- [x] **Step 2: Sanity-check the file still imports cleanly**
 
 Run: `python -c "import ast; ast.parse(open('backend/jira_client.py').read())"`
 Expected: no output, exit code 0 (confirms no syntax errors before wiring it up to the app).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add backend/jira_client.py
@@ -182,8 +182,9 @@ git commit -m "feat: add clone_source() and open_children_due() for Sprint Chang
 **Interfaces:**
 - Consumes: `client()` (existing helper, line 49), `staging` (existing module-level `StagingStore`, line 43), `fields_module.next_iter_title`/`.to_date` (Task 1), `c.clone_source`/`c.open_children_due` (Task 2), `staging.stage_create(data: dict) -> dict` (existing, returns `{"id", "kind": "create", "tempId", "data"}`).
 - Produces: `POST /api/issue/{key}/sprint-change` → `200 {"story": {"tempId", "summary"}, "subtasks": [{"tempId", "summary"}, ...], "count": int}`, or `400` with a `detail` message when the story is ineligible, or `502` on a Jira API error. Consumed by the frontend in Task 4.
+- **Amended during implementation:** the original story and each cloned sub-task are also staged as a `Done` status transition via the existing `staging.stage_update(key, {"status": "Done"})`, since they're superseded by their clones. See `docs/superpowers/specs/2026-07-17-sprint-change-design.md` § Originals.
 
-- [ ] **Step 1: Update the datetime import**
+- [x] **Step 1: Update the datetime import**
 
 In `backend/main.py`, change line 10 from:
 
@@ -197,7 +198,7 @@ to:
 from datetime import date, datetime, timedelta, timezone
 ```
 
-- [ ] **Step 2: Insert the endpoint**
+- [x] **Step 2: Insert the endpoint**
 
 Insert between line 270 (`    return issue`) and line 273 (`@app.post("/api/stage/update/{key}")`) — i.e. replace the blank line 271-272 gap with:
 
@@ -274,12 +275,12 @@ def sprint_change(key: str):
 
 ```
 
-- [ ] **Step 3: Sanity-check the app still imports**
+- [x] **Step 3: Sanity-check the app still imports**
 
 Run: `python -c "from backend.main import app; print('ok')"`
 Expected: `ok` (confirms no syntax/import errors; this does not require Jira credentials since it only imports the module, it doesn't call `client()`).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add backend/main.py
@@ -300,7 +301,7 @@ git commit -m "feat: add POST /api/issue/{key}/sprint-change endpoint"
 - Consumes: `api()` (existing fetch wrapper, line 18), `toast()` (line 90), `refreshStageCount()` (line 928), `loadTree()` (existing, called the same way by `stageIssueUpdate` at line 606), `issue.type`/`issue.key` (existing fields already used elsewhere in `renderIssueDetail`).
 - Produces: `sprintChange(key: string)`, exposed as `window.sprintChange` so the inline `onclick` handler can call it (matching how `stageIssueUpdate` and `selectItem` are already exposed).
 
-- [ ] **Step 1: Add the button to `renderIssueDetail()`**
+- [x] **Step 1: Add the button to `renderIssueDetail()`**
 
 In `frontend/app.js`, find this block (currently lines 359-361):
 
@@ -341,7 +342,7 @@ Change it to:
     </div>`;
 ```
 
-- [ ] **Step 2: Add the `sprintChange()` handler**
+- [x] **Step 2: Add the `sprintChange()` handler**
 
 In `frontend/app.js`, find this block (currently lines 607-611):
 
@@ -377,7 +378,7 @@ window.selectItem = selectItem;
 window.sprintChange = sprintChange;
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add frontend/app.js
@@ -386,9 +387,22 @@ git commit -m "feat: add Sprint Change button to the issue detail pane"
 
 ---
 
-### Task 5: End-to-end verification against the running app
+### Task 5: Technical validation (no live Jira on this machine)
 
-No automated UI test exists in this repo (there's no browser test runner configured), so this task is a manual click-through using the `verify` skill's approach — drive the real feature, don't just eyeball the diff. This is safe to do against real Jira: Sprint Change only **stages** creates (see Task 3) — nothing is pushed to Jira until "Review changes → push" is clicked, and staged ops can be discarded from the Review changes modal without side effects.
+This machine has no Jira connectivity, so Steps 1-7 of the original manual
+click-through below **could not run**. Substituted with static/technical
+validation of every file touched:
+
+- [x] `python backend/fields.py` → `ok` (self-check assertions pass)
+- [x] `python -c "import ast; ast.parse(open('backend/jira_client.py').read())"` → no output, exit 0
+- [x] `python -c "from backend.main import app; print('ok')"` → `ok`
+- [x] `node --check frontend/app.js` → exit 0
+
+No code changes were required by validation, so nothing to commit here —
+Tasks 1-4 already committed the implementation.
+
+**Still outstanding — do this manually once connected to Jira**, following
+the original plan below:
 
 **Files:** none (verification only).
 
@@ -407,16 +421,16 @@ In the browser, find (or stage a throwaway) open Story/Task with:
 - [ ] **Step 3: Click Sprint Change and verify the toast**
 
 Select the story, click `🔁 Sprint Change`.
-Expected: success toast reading `Staged: <summary> + N sub-task(s).` where N matches only the qualifying sub-task(s) from Step 2 (the future-dated / undated one must NOT be counted).
+Expected: success toast reading `Staged: <summary> + N sub-task(s). Originals staged as Done.` where N matches only the qualifying sub-task(s) from Step 2 (the future-dated / undated one must NOT be counted).
 
 - [ ] **Step 4: Verify the staged tree**
 
-Expected in the left tree: a new `NEW`-tagged story node titled `<original summary> (Iter 1)` (or `(Iter N+1)` if the original already had a suffix), with the qualifying sub-task(s) nested under it, similarly suffixed.
+Expected in the left tree: a new `NEW`-tagged story node titled `<original summary> (Iter 1)` (or `(Iter N+1)` if the original already had a suffix), with the qualifying sub-task(s) nested under it, similarly suffixed. The original story and its qualifying sub-task(s) should each show a staged Done status transition.
 
 - [ ] **Step 5: Open the new story clone and verify field copy**
 
 Click the new staged story node.
-Expected: description, assignee, priority, labels, and the non-target-completion critical dates (Start/Dev End/UAT) match the original; Target Completion Date is not set yet (it's applied on push, per the existing `targetCompletion` staged-create mechanism used by every other create flow in this app).
+Expected: description, assignee, priority, labels, and the non-target-completion critical dates (Start/Dev End/UAT) match the original; parent link points at the original story's epic (if any); Target Completion Date is not set yet (it's applied on push, per the existing `targetCompletion` staged-create mechanism used by every other create flow in this app).
 
 - [ ] **Step 6: Verify an ineligible story is rejected**
 

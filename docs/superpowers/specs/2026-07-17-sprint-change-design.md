@@ -70,13 +70,27 @@ every other write path in this app.
 ## Originals
 
 The story and each cloned sub-task are superseded by their `(Iter N)` clone,
-so both are staged as `status: Done` with `targetCompletion` set to today and
-a comment `Incomplete, move to next sprint (Iter N)` (N = that item's own new
-iteration number, via the existing `StagingStore.stage_update()` mechanism —
-the same one the manual Status dropdown, date fields, and comment box already
-use). This is a *staged* update like everything else here: nothing changes in
-Jira until the user reviews and pushes, and it can be discarded from the
-Review changes modal.
+so both are staged as `status: config.DONE_STATUS` with `targetCompletion` set
+to today and a comment `Incomplete, move to next sprint (Iter N)` (N = that
+item's own new iteration number, via the existing `StagingStore.stage_update()`
+mechanism — the same one the manual Status dropdown, date fields, and comment
+box already use). This is a *staged* update like everything else here: nothing
+changes in Jira until the user reviews and pushes, and it can be discarded
+from the Review changes modal.
+
+`DONE_STATUS` (env `JIRA_DONE_STATUS`, default `"Done"`) exists because the
+literal status name that means "complete" is workflow-specific — mirrors
+`ONHOLD_STATUS`/`CANCEL_STATUS`. Set it to whatever this Jira instance's
+terminal status is actually called (e.g. `"Completed"`); otherwise
+`transition_issue_by_name` silently no-ops (returns `False`, raises nothing)
+and the original is left open with no error surfaced anywhere.
+
+**Push-time re-validation**: eligibility (On Hold check) is only evaluated
+once, when Sprint Change is clicked. If the original is put On Hold in Jira
+before the staged batch is pushed, `StagingStore.push()` re-checks the live
+status for any update op staged by Sprint Change (marked internally via
+`changes["sprintChangeGuard"]`) and skips it — leaving it in staging with an
+error instead of silently closing/commenting on a now-paused item.
 
 ## API
 

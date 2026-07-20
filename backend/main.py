@@ -425,12 +425,12 @@ def _run_sprint_change(c, key: str) -> dict:
         f"Incomplete, move to next sprint "
         f"(Iter {fields_module.next_iter_n(story['summary'])})")
     staging.stage_update(key, {
-        "status": "Done", "targetCompletion": today.isoformat(),
-        "comment": story_comment})
+        "status": config.DONE_STATUS, "targetCompletion": today.isoformat(),
+        "comment": story_comment, "sprintChangeGuard": True})
     for child_key in child_keys:
         staging.stage_update(child_key, {
-            "status": "Done", "targetCompletion": today.isoformat(),
-            "comment": child_comments[child_key]})
+            "status": config.DONE_STATUS, "targetCompletion": today.isoformat(),
+            "comment": child_comments[child_key], "sprintChangeGuard": True})
 
     return {
         "story": {"tempId": story_op["tempId"], "summary": story["summary"]},

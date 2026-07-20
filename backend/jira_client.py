@@ -418,6 +418,12 @@ class JiraClient:
 
     # -- single issue -------------------------------------------------------
 
+    def get_status(self, key: str) -> str:
+        """Current status name for ``key`` — a light fetch used to
+        re-validate eligibility right before a staged change is pushed."""
+        data = self._request("GET", f"/issue/{key}?fields=status")
+        return (data.get("fields", {}).get("status") or {}).get("name", "")
+
     def get_issue(self, key: str) -> dict:
         base = [
             "summary", "description", "issuetype", "status", "assignee",

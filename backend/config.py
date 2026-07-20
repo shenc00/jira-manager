@@ -42,6 +42,11 @@ AUTO_CANCEL_STALE_ONHOLD = _as_bool(
 ONHOLD_STATUS = os.environ.get("JIRA_ONHOLD_STATUS", "On Hold").strip()
 CANCEL_STATUS = os.environ.get("JIRA_CANCEL_STATUS", "Cancelled").strip()
 ONHOLD_MONTHS = int(os.environ.get("JIRA_ONHOLD_MONTHS", "6") or "6")
+
+# Status Sprint Change transitions originals to once superseded by their clone.
+# Workflow-specific — this instance's terminal status is named "Completed",
+# not "Done", so it must be configurable the same way CANCEL_STATUS is.
+DONE_STATUS = os.environ.get("JIRA_DONE_STATUS", "Done").strip()
 # Safety valve: if more than this many items would be auto-cancelled in one
 # scan, pause and require explicit confirmation instead of mass-cancelling.
 AUTO_CANCEL_CAP = int(os.environ.get("JIRA_AUTO_CANCEL_CAP", "25") or "25")

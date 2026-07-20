@@ -19,6 +19,7 @@ import secrets
 from pathlib import Path
 from typing import Any
 
+from . import config
 from . import fields as fields_mod
 from .jira_client import JiraClient, text_to_adf
 from .local_fields import LocalFieldsStore
@@ -212,6 +213,24 @@ class StagingStore:
             key = op["key"]
             if key.startswith("temp:"):
                 key = temp_to_real.get(key, key)
+            if op["changes"].get("sprintChangeGuard"):
+                # Eligibility (On Hold) was only checked once, when Sprint
+                # Change was clicked - re-check now in case the original was
+                # put On Hold in Jira in the meantime, so a stale staged op
+                # doesn't silently close/comment on an item that's now paused.
+                try:
+                    current_status = client.get_status(key)
+                except Exception as exc:  # noqa: BLE001
+                    op["error"] = str(exc)
+                    remaining.append(op)
+                    report["errors"].append({"op": op["id"], "error": str(exc)})
+                    continue
+                if current_status == config.ONHOLD_STATUS:
+                    op["error"] = f"{key} is now On Hold -- skipped"
+                    remaining.append(op)
+                    report["errors"].append(
+                        {"op": op["id"], "error": op["error"]})
+                    continue
             try:
                 warnings = self._apply_update(client, key, op["changes"])
                 report["updated"].append(key)
@@ -336,6 +355,18 @@ class StagingStore:
                 warnings.append(
                     f"{key}: could not set due date \u2014 likely not on the "
                     f"issue's edit screen in Jira ({exc})")
+
+        # Target Completion Date likewise goes in its own update (same reason
+        # as duedate above).
+        if changes.get("targetCompletion"):
+            field_id = fields_mod.TARGET_COMPLETION_FIELD
+            value = fields_mod.format_custom(field_id, changes["targetCompletion"])
+            try:
+                client.update_issue(key, {field_id: value})
+            except Exception as exc:  # noqa: BLE001
+                warnings.append(
+                    f"{key}: could not set target completion date \u2014 likely "
+                    f"not on the issue's edit screen in Jira ({exc})")
 
         # Time tracking goes in its own update: if the Time Tracking field isn't
         # on the issue's screen Jira rejects it, and we don't want that to undo

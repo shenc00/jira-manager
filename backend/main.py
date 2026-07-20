@@ -405,6 +405,7 @@ def _run_sprint_change(c, key: str) -> dict:
     story_op = staging.stage_create(
         _sprint_change_clone_data(story, story.get("parentKey"), new_target))
     subtasks: list[dict] = []
+    child_comments: dict[str, str] = {}
     for child_key in child_keys:
         try:
             sub = c.clone_source(child_key)
@@ -413,13 +414,23 @@ def _run_sprint_change(c, key: str) -> dict:
         op = staging.stage_create(
             _sprint_change_clone_data(sub, story_op["tempId"], new_target))
         subtasks.append({"tempId": op["tempId"], "summary": sub["summary"]})
+        child_comments[child_key] = (
+            f"Incomplete, move to next sprint "
+            f"(Iter {fields_module.next_iter_n(sub['summary'])})")
 
     # Originals are superseded by their clones, so stage them as Done too,
-    # completed today — still staged, not pushed, like every other write here.
-    closed = {"status": "Done", "targetCompletion": today.isoformat()}
-    staging.stage_update(key, closed)
+    # completed today, with a comment pointing at the new iteration — still
+    # staged, not pushed, like every other write here.
+    story_comment = (
+        f"Incomplete, move to next sprint "
+        f"(Iter {fields_module.next_iter_n(story['summary'])})")
+    staging.stage_update(key, {
+        "status": "Done", "targetCompletion": today.isoformat(),
+        "comment": story_comment})
     for child_key in child_keys:
-        staging.stage_update(child_key, closed)
+        staging.stage_update(child_key, {
+            "status": "Done", "targetCompletion": today.isoformat(),
+            "comment": child_comments[child_key]})
 
     return {
         "story": {"tempId": story_op["tempId"], "summary": story["summary"]},

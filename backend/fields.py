@@ -113,6 +113,12 @@ def next_iter_title(summary: str) -> str:
     return f"{summary} (Iter 1)"
 
 
+def next_iter_n(summary: str) -> int:
+    """The Iter number next_iter_title() would produce for ``summary``."""
+    m = _ITER_RE.match((summary or "").strip())
+    return int(m.group(2)) + 1 if m else 1
+
+
 if __name__ == "__main__":
     assert next_iter_title("Fix login bug") == "Fix login bug (Iter 1)"
     assert next_iter_title("Fix login bug (Iter 1)") == "Fix login bug (Iter 2)"

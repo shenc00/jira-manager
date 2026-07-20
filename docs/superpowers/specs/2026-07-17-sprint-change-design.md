@@ -70,11 +70,13 @@ every other write path in this app.
 ## Originals
 
 The story and each cloned sub-task are superseded by their `(Iter N)` clone,
-so both are staged as `status: Done` with `targetCompletion` set to today
-(via the existing `StagingStore.stage_update()` mechanism — the same one the
-manual Status dropdown and date fields already use). This is a *staged*
-update like everything else here: nothing changes in Jira until the user
-reviews and pushes, and it can be discarded from the Review changes modal.
+so both are staged as `status: Done` with `targetCompletion` set to today and
+a comment `Incomplete, move to next sprint (Iter N)` (N = that item's own new
+iteration number, via the existing `StagingStore.stage_update()` mechanism —
+the same one the manual Status dropdown, date fields, and comment box already
+use). This is a *staged* update like everything else here: nothing changes in
+Jira until the user reviews and pushes, and it can be discarded from the
+Review changes modal.
 
 ## API
 

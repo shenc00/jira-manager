@@ -11,17 +11,19 @@ with a fresh 30-day target completion date, leaving the originals untouched.
 
 - New `🔁 Sprint Change` button in the issue detail pane's `.detail-actions`
   (same spot as the existing `Stage changes` button), shown when the selected
-  issue's type is not a sub-task and not an Epic.
-- Clicking it operates only on the currently selected story — no separate
+  issue's type is not an Epic. Available on stories/tasks and sub-tasks alike.
+- Clicking it operates only on the currently selected issue — no separate
   picker.
 
 ## Eligibility (server-validated on click)
 
-- Story: must not be a sub-task type, must have `statusCategory != Done`, and
-  must have a Target Completion Date set and `<= today`. Any failure returns
-  400 with a message; nothing is staged.
-- Sub-tasks: `parent = {story key}`, open (`statusCategory != Done`), Target
-  Completion Date set and `<= today`.
+- Selected issue: must have `statusCategory != Done`, and must have a Target
+  Completion Date set and `<= today`. Any failure returns 400 with a
+  message; nothing is staged.
+- If the selected issue is a story/task (not a sub-task), its open
+  (`statusCategory != Done`) sub-tasks with a Target Completion Date set and
+  `<= today` are also cloned. If the selected issue is itself a sub-task,
+  only it is cloned — no child lookup.
 - **A sub-task (or the story) with no Target Completion Date is excluded** —
   there's nothing to compare against "earlier than or including today".
 

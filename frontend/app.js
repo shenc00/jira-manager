@@ -368,9 +368,9 @@ function renderIssueDetail(issue) {
 
   _origLabels = issue.labels || [];
 
-  const sprintChangeButton = ["Epic", "Sub-task", "Subtask"].includes(issue.type)
+  const sprintChangeButton = issue.type === "Epic"
     ? ""
-    : `<button onclick="sprintChange('${issue.key}')" title="Clone this story and its open, due sub-tasks into a new (Iter N) batch, and stage the originals as Done">🔁 Sprint Change</button>`;
+    : `<button onclick="sprintChange('${issue.key}')" title="Clone this story/sub-task (and, for stories, its open due sub-tasks) into a new (Iter N) batch, and stage the originals as Done">🔁 Sprint Change</button>`;
 
   $("#detail").innerHTML = `
     ${stagedNote}${dueBanner}

@@ -349,20 +349,16 @@ def _validate_local_fields(c, project: str, data: dict) -> None:
 
 @app.post("/api/issue/{key}/sprint-change")
 def sprint_change(key: str):
-    """Clone an open story/task and its open, due sub-tasks into a new
-    "(Iter N)" batch with a fresh 30-day target completion date, and stage
-    the originals as Done. Staged only — nothing is pushed to Jira until
-    the user reviews and pushes."""
+    """Clone an open story/task/sub-task into a new "(Iter N)" batch with a
+    fresh 30-day target completion date, and stage the original(s) as Done.
+    Stories/tasks also pull in their open, due sub-tasks. Staged only —
+    nothing is pushed to Jira until the user reviews and pushes."""
     c = client()
     try:
         story = c.clone_source(key)
     except JiraError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
-    if story["subtask"]:
-        raise HTTPException(
-            status_code=400,
-            detail="Sprint Change only works on stories/tasks, not sub-tasks.")
     if story["statusCategory"] == "done":
         raise HTTPException(status_code=400, detail=f"{key} is already Done.")
 
@@ -373,10 +369,13 @@ def sprint_change(key: str):
             status_code=400,
             detail=f"{key} has no Target Completion Date on or before today.")
 
-    try:
-        child_keys = c.open_children_due(key, today)
-    except JiraError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+    if story["subtask"]:
+        child_keys: list[str] = []
+    else:
+        try:
+            child_keys = c.open_children_due(key, today)
+        except JiraError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
 
     new_target = (today + timedelta(days=30)).isoformat()
 

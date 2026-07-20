@@ -401,55 +401,41 @@ validation of every file touched:
 No code changes were required by validation, so nothing to commit here —
 Tasks 1-4 already committed the implementation.
 
-**Still outstanding — do this manually once connected to Jira**, following
-the original plan below:
+**Verified 2026-07-20** against live Jira (via `curl` against the running
+API rather than the browser — equivalent coverage, faster to run):
 
-**Files:** none (verification only).
-
-- [ ] **Step 1: Start the app**
-
-Run: `python run.py` (or use the project's `run` skill if one is configured)
-Expected: server starts, prints the local URL (e.g. `http://127.0.0.1:8123`).
-
-- [ ] **Step 2: Pick a real test story**
-
-In the browser, find (or stage a throwaway) open Story/Task with:
-- statusCategory not Done
-- Target Completion Date set to today or earlier
-- At least one open sub-task with a Target Completion Date set to today or earlier, and at least one open sub-task with either no date or a future date (to confirm filtering works)
-
-- [ ] **Step 3: Click Sprint Change and verify the toast**
-
-Select the story, click `🔁 Sprint Change`.
-Expected: success toast reading `Staged: <summary> + N sub-task(s). Originals staged as Done.` where N matches only the qualifying sub-task(s) from Step 2 (the future-dated / undated one must NOT be counted).
-
-- [ ] **Step 4: Verify the staged tree**
-
-Expected in the left tree: a new `NEW`-tagged story node titled `<original summary> (Iter 1)` (or `(Iter N+1)` if the original already had a suffix), with the qualifying sub-task(s) nested under it, similarly suffixed. The original story and its qualifying sub-task(s) should each show a staged Done status transition.
-
-- [ ] **Step 5: Open the new story clone and verify field copy**
-
-Click the new staged story node.
-Expected: description, assignee, priority, labels, and the non-target-completion critical dates (Start/Dev End/UAT) match the original; parent link points at the original story's epic (if any); Target Completion Date is not set yet (it's applied on push, per the existing `targetCompletion` staged-create mechanism used by every other create flow in this app).
-
-- [ ] **Step 6: Verify an ineligible story is rejected**
-
-Select a story that's either Done or has no Target Completion Date on/before today, click `🔁 Sprint Change`.
-Expected: an error toast with a clear reason, and no new staged items appear (check the `Review changes` badge count is unchanged).
-
-- [ ] **Step 7: Clean up the test staging**
-
-Open `Review changes`, discard the staged test clones (unless you actually want them pushed).
-Expected: badge count returns to its pre-test value.
-
-- [ ] **Step 8: Final commit (docs sync, if anything changed during verification)**
-
-If Steps 1-7 required no code changes, there's nothing to commit here — Tasks 1-4 already committed the implementation. If verification surfaced a fix, make it, re-run the relevant step, then:
-
-```bash
-git add -A
-git commit -m "fix: <describe what verification caught>"
-```
+- [x] **Step 1: Start the app** — `python run.py`, server started on
+  `http://127.0.0.1:8123`.
+- [x] **Step 2: Pick a real test story** — `ISC-2570` (Story, overdue target
+  completion `2025-12-31`), with sub-task `ISC-4650` (overdue target
+  completion `2026-07-17`).
+- [x] **Step 3: Click Sprint Change and verify the response** —
+  `POST /api/issue/ISC-2570/sprint-change` → `{"story": {...}, "subtasks": [{...}], "count": 4}`.
+  Matches: 1 qualifying sub-task cloned, 4 total ops (2 creates + 2 Done updates).
+- [x] **Step 4: Verify the staged tree** — `GET /api/staging` showed the
+  story create (`(Iter 1)` suffix), the sub-task create chained to the
+  story's `tempId` via `parentRef`, and Done updates on both originals
+  (`ISC-2570`, `ISC-4650`).
+- [x] **Step 5: Verify field copy** — clone carried `project`, `issuetype`,
+  `description`, `assigneeId`, `priority`, `labels`; `parentRef` pointed at
+  the original epic `ISC-205`; `targetCompletion` was `2026-08-19`
+  (today + 30 days, not copied from the source). Matches spec.
+- [x] **Step 5b (added during this verification pass): direct sub-task
+  clone** — `POST /api/issue/ISC-4650/sprint-change` (a sub-task, selected
+  directly rather than via its parent story) → `{"story": {...}, "subtasks": [], "count": 2}`.
+  Clone's `parentRef` stayed on the real parent `ISC-2570` (not a new
+  clone); no child lookup attempted. This exercises the fix in
+  `0a98fcc` (sub-tasks were previously hard-rejected with a 400).
+- [x] **Step 6: Verify an ineligible issue is rejected** —
+  `POST /api/issue/ISC-247/sprint-change` (Epic, no Target Completion Date)
+  → `400 {"detail": "ISC-247 has no Target Completion Date on or before today."}`,
+  staging count unchanged (0).
+- [x] **Step 7: Clean up the test staging** — `DELETE /api/staging` after
+  each test; final `GET /api/staging` confirmed `{"ops": [], "count": 0}`.
+  Nothing was pushed to Jira at any point.
+- [x] **Step 8: Final commit** — sub-task fix committed as `0a98fcc`
+  (`fix: allow Sprint Change on sub-tasks directly`) and pushed before this
+  verification pass; this doc update has no separate code change to commit.
 
 ---
 

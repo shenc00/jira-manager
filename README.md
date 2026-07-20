@@ -377,11 +377,14 @@ before today — and click **🔁 Sprint Change** in its detail panel. This:
   original's epic (story) or to the new story clone (sub-tasks). Target
   Completion Date is **not** copied — it's set to **today + 30 days** on every
   clone.
-- Stages the original story and its due sub-tasks as **Done**, since they're
-  superseded by the clones.
+- Stages the original story and its due sub-tasks as **Done**
+  (`JIRA_DONE_STATUS`, whatever your workflow calls its terminal status —
+  default `Done`), since they're superseded by the clones.
 
 Everything above is **staged only** — review it (and discard if needed) in
-**Review changes**, same as any other edit, before pushing.
+**Review changes**, same as any other edit, before pushing. On **push**, if an
+original went **On Hold** in Jira after being staged, its Done update is
+skipped (left in staging with an error) instead of silently applying.
 
 ### Review & push
 **Review changes** (top right, with a count badge) lists every staged
@@ -451,6 +454,7 @@ unusually large batches, and every cancellation is logged to
 | `JIRA_AUTO_CANCEL_STALE_ONHOLD` | | `false` | Auto-cancel stale on-hold items |
 | `JIRA_ONHOLD_STATUS` | | `On Hold` | The "on hold" status name |
 | `JIRA_CANCEL_STATUS` | | `Cancelled` | Target status when cancelling |
+| `JIRA_DONE_STATUS` | | `Done` | Terminal status Sprint Change moves originals to |
 | `JIRA_ONHOLD_MONTHS` | | `6` | On-hold age (months) before cancelling |
 | `JIRA_AUTO_CANCEL_CAP` | | `25` | Pause for confirmation above this many |
 | `JIRA_VERIFY_SSL` | | `true` | TLS verification (last-resort `false`) |

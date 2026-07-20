@@ -521,6 +521,7 @@ class JiraClient:
             "description": adf_to_text(f.get("description")),
             "issuetype": (f.get("issuetype") or {}).get("name", ""),
             "subtask": bool((f.get("issuetype") or {}).get("subtask")),
+            "status": status.get("name", ""),
             "statusCategory": (status.get("statusCategory") or {}).get("key", ""),
             "project": (f.get("project") or {}).get("key", ""),
             "parentKey": (f.get("parent") or {}).get("key"),
@@ -533,18 +534,22 @@ class JiraClient:
 
     def open_children(self, parent_key: str) -> list[str]:
         """Keys of ``parent_key``'s open sub-tasks. "Open" = statusCategory
-        != Done. Target Completion Date is not considered — every open
-        sub-task under a qualifying story moves with it."""
-        issues = self.search(f'parent = "{parent_key}" ORDER BY created')
+        != Done and status != On Hold. Target Completion Date is not
+        considered — every other open sub-task under a qualifying story
+        moves with it."""
+        issues = self.search(
+            f'parent = "{parent_key}" AND status != "{config.ONHOLD_STATUS}" '
+            f"ORDER BY created")
         return [issue["key"] for issue in issues if not self._is_done(issue)]
 
     def sprint_change_candidates(self, assignee: str | None = None) -> list[str]:
         """Keys of open stories/tasks (not Epic, not sub-task) owned by the
         user with a Target Completion Date on or before today — the set the
-        bulk Sprint Change button acts on."""
+        bulk Sprint Change button acts on. On Hold items are excluded."""
         who = "currentUser()" if not assignee else f'"{assignee}"'
         issues = self.search(
             f"(assignee = {who} OR reporter = {who}) AND statusCategory != Done "
+            f'AND status != "{config.ONHOLD_STATUS}" '
             f"AND issuetype not in (Epic, Sub-task)",
             fields=["issuetype", fields_mod.TARGET_COMPLETION_FIELD],
         )

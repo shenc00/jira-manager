@@ -26,18 +26,20 @@ Two entry points, sharing the same eligibility rules and clone/stage logic:
 ## Eligibility (server-validated on click)
 
 - Target issue (selected issue for the per-issue button; each candidate
-  story/task for the bulk button): must have `statusCategory != Done`, and
-  must have a Target Completion Date set and `<= today`. Any failure returns
-  400 with a message (per-issue) or is skipped and reported in `errors`
-  (bulk); nothing is staged for that issue.
+  story/task for the bulk button): must have `statusCategory != Done`, must
+  not have status On Hold (`config.ONHOLD_STATUS`), and must have a Target
+  Completion Date set and `<= today`. Any failure returns 400 with a message
+  (per-issue) or is skipped and reported in `errors` (bulk); nothing is
+  staged for that issue.
 - Bulk candidates are restricted to stories/tasks (Epic and Sub-task
   excluded) assigned to or reported by the user being viewed — a sub-task is
   never itself a bulk root, only ever pulled in as a child of a qualifying
   story.
-- If the target issue is a story/task (not a sub-task), **all of its open**
-  (`statusCategory != Done`) **sub-tasks are also cloned, regardless of their
-  own Target Completion Date.** If the target issue is itself a sub-task
-  (per-issue button only), only it is cloned — no child lookup.
+- If the target issue is a story/task (not a sub-task), **all of its open,
+  non-On-Hold** (`statusCategory != Done` and `status != On Hold`) **sub-tasks
+  are also cloned, regardless of their own Target Completion Date.** If the
+  target issue is itself a sub-task (per-issue button only), only it is
+  cloned — no child lookup.
 - **The story/task itself still needs a Target Completion Date `<= today`**
   to qualify — only the sub-task-under-a-qualifying-story rule dropped the
   date requirement.

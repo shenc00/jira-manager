@@ -382,6 +382,8 @@ def _run_sprint_change(c, key: str) -> dict:
 
     if story["statusCategory"] == "done":
         raise HTTPException(status_code=400, detail=f"{key} is already Done.")
+    if story["status"] == config.ONHOLD_STATUS:
+        raise HTTPException(status_code=400, detail=f"{key} is On Hold.")
 
     today = date.today()
     story_due = fields_module.to_date(story["targetCompletion"])

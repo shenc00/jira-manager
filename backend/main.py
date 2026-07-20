@@ -412,11 +412,12 @@ def _run_sprint_change(c, key: str) -> dict:
             _sprint_change_clone_data(sub, story_op["tempId"], new_target))
         subtasks.append({"tempId": op["tempId"], "summary": sub["summary"]})
 
-    # Originals are superseded by their clones, so stage them as Done too —
-    # still staged, not pushed, like every other write in this app.
-    staging.stage_update(key, {"status": "Done"})
+    # Originals are superseded by their clones, so stage them as Done too,
+    # completed today — still staged, not pushed, like every other write here.
+    closed = {"status": "Done", "targetCompletion": today.isoformat()}
+    staging.stage_update(key, closed)
     for child_key in child_keys:
-        staging.stage_update(child_key, {"status": "Done"})
+        staging.stage_update(child_key, closed)
 
     return {
         "story": {"tempId": story_op["tempId"], "summary": story["summary"]},

@@ -68,11 +68,11 @@ every other write path in this app.
 ## Originals
 
 The story and each cloned sub-task are superseded by their `(Iter N)` clone,
-so both are staged as a status transition to `Done` (via the existing
-`StagingStore.stage_update()` / `changes["status"]` mechanism — the same one
-the manual Status dropdown already uses). This is a *staged* update like
-everything else here: nothing changes in Jira until the user reviews and
-pushes, and it can be discarded from the Review changes modal.
+so both are staged as `status: Done` with `targetCompletion` set to today
+(via the existing `StagingStore.stage_update()` mechanism — the same one the
+manual Status dropdown and date fields already use). This is a *staged*
+update like everything else here: nothing changes in Jira until the user
+reviews and pushes, and it can be discarded from the Review changes modal.
 
 ## API
 

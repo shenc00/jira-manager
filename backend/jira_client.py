@@ -531,21 +531,29 @@ class JiraClient:
             "targetCompletion": f.get(fields_mod.TARGET_COMPLETION_FIELD),
         }
 
-    def open_children_due(self, parent_key: str, on_or_before: date) -> list[str]:
-        """Keys of ``parent_key``'s open sub-tasks due on or before a date.
-
-        "Open" = statusCategory != Done. "Due" = Target Completion Date is
-        set and <= ``on_or_before``. A sub-task with no Target Completion
-        Date is excluded (nothing to compare).
-        """
+    def open_children(self, parent_key: str) -> list[str]:
+        """Keys of ``parent_key``'s open sub-tasks. "Open" = statusCategory
+        != Done. Target Completion Date is not considered — every open
+        sub-task under a qualifying story moves with it."""
         issues = self.search(f'parent = "{parent_key}" ORDER BY created')
+        return [issue["key"] for issue in issues if not self._is_done(issue)]
+
+    def sprint_change_candidates(self, assignee: str | None = None) -> list[str]:
+        """Keys of open stories/tasks (not Epic, not sub-task) owned by the
+        user with a Target Completion Date on or before today — the set the
+        bulk Sprint Change button acts on."""
+        who = "currentUser()" if not assignee else f'"{assignee}"'
+        issues = self.search(
+            f"(assignee = {who} OR reporter = {who}) AND statusCategory != Done "
+            f"AND issuetype not in (Epic, Sub-task)",
+            fields=["issuetype", fields_mod.TARGET_COMPLETION_FIELD],
+        )
+        today = date.today()
         keys: list[str] = []
         for issue in issues:
-            if self._is_done(issue):
-                continue
             due = fields_mod.to_date(
                 issue.get("fields", {}).get(fields_mod.TARGET_COMPLETION_FIELD))
-            if due is not None and due <= on_or_before:
+            if due is not None and due <= today:
                 keys.append(issue["key"])
         return keys
 

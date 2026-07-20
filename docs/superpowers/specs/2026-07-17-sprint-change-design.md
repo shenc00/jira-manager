@@ -9,23 +9,38 @@ with a fresh 30-day target completion date, leaving the originals untouched.
 
 ## Trigger & scope
 
-- New `🔁 Sprint Change` button in the issue detail pane's `.detail-actions`
-  (same spot as the existing `Stage changes` button), shown when the selected
-  issue's type is not an Epic. Available on stories/tasks and sub-tasks alike.
-- Clicking it operates only on the currently selected issue — no separate
-  picker.
+Two entry points, sharing the same eligibility rules and clone/stage logic:
+
+- **Per-issue**: `🔁 Sprint Change` button in the issue detail pane's
+  `.detail-actions` (same spot as the existing `Stage changes` button),
+  shown when the selected issue's type is not an Epic. Available on
+  stories/tasks and sub-tasks alike. Operates only on the selected issue.
+- **Bulk**: `🔁 Sprint Change all` button in the header toolbar (next to
+  `Cancel stale on-hold`). One click, no picker, no confirmation dialog —
+  finds every qualifying story/task currently in view (respects the
+  `View user by email` selection, same as the tree) and runs Sprint Change
+  on each. Safe to fire-and-forget because everything lands in staging only,
+  same safety net as every other write path here (reviewable/discardable
+  from Review changes until pushed).
 
 ## Eligibility (server-validated on click)
 
-- Selected issue: must have `statusCategory != Done`, and must have a Target
-  Completion Date set and `<= today`. Any failure returns 400 with a
-  message; nothing is staged.
-- If the selected issue is a story/task (not a sub-task), its open
-  (`statusCategory != Done`) sub-tasks with a Target Completion Date set and
-  `<= today` are also cloned. If the selected issue is itself a sub-task,
-  only it is cloned — no child lookup.
-- **A sub-task (or the story) with no Target Completion Date is excluded** —
-  there's nothing to compare against "earlier than or including today".
+- Target issue (selected issue for the per-issue button; each candidate
+  story/task for the bulk button): must have `statusCategory != Done`, and
+  must have a Target Completion Date set and `<= today`. Any failure returns
+  400 with a message (per-issue) or is skipped and reported in `errors`
+  (bulk); nothing is staged for that issue.
+- Bulk candidates are restricted to stories/tasks (Epic and Sub-task
+  excluded) assigned to or reported by the user being viewed — a sub-task is
+  never itself a bulk root, only ever pulled in as a child of a qualifying
+  story.
+- If the target issue is a story/task (not a sub-task), **all of its open**
+  (`statusCategory != Done`) **sub-tasks are also cloned, regardless of their
+  own Target Completion Date.** If the target issue is itself a sub-task
+  (per-issue button only), only it is cloned — no child lookup.
+- **The story/task itself still needs a Target Completion Date `<= today`**
+  to qualify — only the sub-task-under-a-qualifying-story rule dropped the
+  date requirement.
 
 ## Cloning
 
@@ -67,12 +82,25 @@ Response: `{"story": {"tempId", "key", "summary"}, "subtasks": [...], "count"}`
 (count = total staged ops, for the header badge; includes the two clone
 creates plus the Done updates on the originals). 400 on ineligibility.
 
+`POST /api/sprint-change/bulk?email=` (email optional, matches the tree's
+"view user" selection)
+
+Response: `{"stories": [{"key", "story": {...}, "subtasks": [...]}, ...],
+"errors": [{"key", "detail"}, ...], "count"}` — one `stories` entry per
+successfully-staged story, one `errors` entry per candidate that failed
+(e.g. raced to Done between the candidate scan and staging). Never a 400
+itself — an empty `stories` list with no candidates is a normal response.
+
 ## Frontend
 
-- Button `onclick` posts to the endpoint.
-- Success: toast `Staged: <story summary> clone + N sub-task(s)`, then
-  `refreshStageCount()` + `loadTree()` (same pattern as `stageIssueUpdate`).
-- Failure: toast the error message, no state change.
+- Per-issue button `onclick` posts to `/api/issue/{key}/sprint-change`.
+  Success: toast `Staged: <story summary> + N sub-task(s). Originals staged
+  as Done.`, then `refreshStageCount()` + `loadTree()` (same pattern as
+  `stageIssueUpdate`). Failure: toast the error message, no state change.
+- Bulk button `onclick` posts to `/api/sprint-change/bulk`. Success: toast
+  the story/sub-task counts staged; a second toast lists any skipped keys
+  from `errors`. No candidates: toast "No open stories/tasks are due for a
+  Sprint Change." Same `refreshStageCount()` + `loadTree()` follow-up.
 
 ## Out of scope
 
@@ -81,4 +109,3 @@ creates plus the Done updates on the originals). 400 on ineligibility.
   the app already models," not that field.
 - Any field change to the original story/sub-tasks beyond the Done status
   transition described above (no summary/description/date edits, etc.).
-- Bulk / multi-story sprint change.

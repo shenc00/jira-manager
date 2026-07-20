@@ -347,13 +347,34 @@ def _validate_local_fields(c, project: str, data: dict) -> None:
                        f"a valid assignment group.")
 
 
-@app.post("/api/issue/{key}/sprint-change")
-def sprint_change(key: str):
+def _sprint_change_clone_data(src: dict, parent_ref: str | None, new_target: str) -> dict:
+    data: dict[str, Any] = {
+        "project": src["project"],
+        "issuetype": src["issuetype"],
+        "summary": fields_module.next_iter_title(src["summary"]),
+        "targetCompletion": new_target,
+    }
+    if src.get("description"):
+        data["description"] = src["description"]
+    if parent_ref:
+        data["parentRef"] = parent_ref
+    if src.get("assigneeId"):
+        data["assigneeId"] = src["assigneeId"]
+    if src.get("priority"):
+        data["priority"] = src["priority"]
+    if src.get("labels"):
+        data["labels"] = src["labels"]
+    if src.get("critical"):
+        data["custom"] = src["critical"]
+    return data
+
+
+def _run_sprint_change(c, key: str) -> dict:
     """Clone an open story/task/sub-task into a new "(Iter N)" batch with a
     fresh 30-day target completion date, and stage the original(s) as Done.
-    Stories/tasks also pull in their open, due sub-tasks. Staged only —
-    nothing is pushed to Jira until the user reviews and pushes."""
-    c = client()
+    Stories/tasks also pull in all of their open sub-tasks. Staged only —
+    nothing is pushed to Jira until the user reviews and pushes. Raises
+    HTTPException on ineligibility or a Jira error."""
     try:
         story = c.clone_source(key)
     except JiraError as exc:
@@ -373,41 +394,22 @@ def sprint_change(key: str):
         child_keys: list[str] = []
     else:
         try:
-            child_keys = c.open_children_due(key, today)
+            child_keys = c.open_children(key)
         except JiraError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
 
     new_target = (today + timedelta(days=30)).isoformat()
 
-    def clone_data(src: dict, parent_ref: str | None) -> dict:
-        data: dict[str, Any] = {
-            "project": src["project"],
-            "issuetype": src["issuetype"],
-            "summary": fields_module.next_iter_title(src["summary"]),
-            "targetCompletion": new_target,
-        }
-        if src.get("description"):
-            data["description"] = src["description"]
-        if parent_ref:
-            data["parentRef"] = parent_ref
-        if src.get("assigneeId"):
-            data["assigneeId"] = src["assigneeId"]
-        if src.get("priority"):
-            data["priority"] = src["priority"]
-        if src.get("labels"):
-            data["labels"] = src["labels"]
-        if src.get("critical"):
-            data["custom"] = src["critical"]
-        return data
-
-    story_op = staging.stage_create(clone_data(story, story.get("parentKey")))
+    story_op = staging.stage_create(
+        _sprint_change_clone_data(story, story.get("parentKey"), new_target))
     subtasks: list[dict] = []
     for child_key in child_keys:
         try:
             sub = c.clone_source(child_key)
         except JiraError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
-        op = staging.stage_create(clone_data(sub, story_op["tempId"]))
+        op = staging.stage_create(
+            _sprint_change_clone_data(sub, story_op["tempId"], new_target))
         subtasks.append({"tempId": op["tempId"], "summary": sub["summary"]})
 
     # Originals are superseded by their clones, so stage them as Done too —
@@ -419,8 +421,42 @@ def sprint_change(key: str):
     return {
         "story": {"tempId": story_op["tempId"], "summary": story["summary"]},
         "subtasks": subtasks,
-        "count": len(staging.all()),
     }
+
+
+@app.post("/api/issue/{key}/sprint-change")
+def sprint_change(key: str):
+    """Sprint Change a single story/task/sub-task. See _run_sprint_change."""
+    c = client()
+    result = _run_sprint_change(c, key)
+    result["count"] = len(staging.all())
+    return result
+
+
+@app.post("/api/sprint-change/bulk")
+def sprint_change_bulk(email: str | None = None):
+    """Sprint Change every qualifying story/task in view: open, Target
+    Completion Date on or before today, not an Epic or sub-task. Each pulls
+    in all of its own open sub-tasks. One click, no per-item confirmation —
+    like the single-issue endpoint, everything lands in staging only, so it
+    stays reviewable/discardable until the user pushes."""
+    c = client()
+    view = _resolve_view(c, email)
+    account = view["accountId"] if view else None
+    try:
+        candidate_keys = c.sprint_change_candidates(account)
+    except JiraError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    stories: list[dict] = []
+    errors: list[dict] = []
+    for key in candidate_keys:
+        try:
+            stories.append({"key": key, **_run_sprint_change(c, key)})
+        except HTTPException as exc:
+            errors.append({"key": key, "detail": exc.detail})
+
+    return {"stories": stories, "errors": errors, "count": len(staging.all())}
 
 
 @app.post("/api/stage/update/{key}")

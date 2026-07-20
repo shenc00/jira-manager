@@ -783,10 +783,30 @@ async function sprintChange(key) {
   } catch (e) { toast(e.message, "error"); }
 }
 
+async function sprintChangeBulk() {
+  const params = new URLSearchParams();
+  if (viewedEmail) params.set("email", viewedEmail);
+  try {
+    const res = await api("/api/sprint-change/bulk" + (params.toString() ? "?" + params : ""), {
+      method: "POST",
+    });
+    if (!res.stories.length) {
+      toast("No open stories/tasks are due for a Sprint Change.");
+    } else {
+      const subtaskTotal = res.stories.reduce((n, s) => n + s.subtasks.length, 0);
+      toast(`Staged ${res.stories.length} stor${res.stories.length === 1 ? "y" : "ies"} + ${subtaskTotal} sub-task(s). Originals staged as Done.`, "success");
+    }
+    if (res.errors.length) toast(`${res.errors.length} skipped: ${res.errors.map((e) => e.key).join(", ")}`, "error");
+    refreshStageCount();
+    loadTree();
+  } catch (e) { toast(e.message, "error"); }
+}
+
 window.stageIssueUpdate = stageIssueUpdate;
 window.removeStaged = removeStaged;
 window.selectItem = selectItem;
 window.sprintChange = sprintChange;
+window.sprintChangeBulk = sprintChangeBulk;
 
 // ---------- create wizard ----------
 function newItemFlow() {
@@ -1382,6 +1402,7 @@ $("#btn-refresh").onclick = async () => {
 };
 $("#btn-review").onclick = reviewChanges;
 $("#btn-onhold").onclick = () => runOnHoldScan({ manual: true });
+$("#btn-sprint-change").onclick = () => sprintChangeBulk();
 $("#chk-completed").onchange = () => loadTree(true);
 
 // ---------- tree search wiring ----------

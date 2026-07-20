@@ -439,6 +439,64 @@ API rather than the browser — equivalent coverage, faster to run):
 
 ---
 
+### Task 6: Bulk "Sprint Change all" button (2026-07-20 scope change)
+
+User feedback after Task 5 verification: the button should be a single
+global action, not a per-issue click — one click moves every qualifying
+story (and, for each, all of its open sub-tasks regardless of their own due
+date, not just due-today-or-earlier ones). The per-issue button stays for
+one-off use.
+
+**Files changed:**
+- `backend/jira_client.py`: `open_children_due(parent_key, on_or_before)` →
+  `open_children(parent_key)` (drops the due-date filter — every open
+  sub-task under a qualifying story now moves with it). Added
+  `sprint_change_candidates(assignee=None)`: JQL-searches stories/tasks
+  (Epic and Sub-task excluded) assigned to or reported by the user, open,
+  then filters client-side to Target Completion Date `<= today` (reusing
+  `fields_mod.to_date`, same as the single-issue path — avoided a custom-field
+  JQL date comparison since there was no existing precedent for it in this
+  codebase).
+- `backend/main.py`: extracted the clone/stage logic from `sprint_change()`
+  into `_run_sprint_change(c, key)` + `_sprint_change_clone_data()`, reused
+  by both the existing `POST /api/issue/{key}/sprint-change` and the new
+  `POST /api/sprint-change/bulk?email=` (email optional, matches the
+  tree's "view user" selection). Bulk runs every candidate through the same
+  eligibility/clone/stage path; per-candidate failures land in `errors`
+  instead of aborting the whole batch.
+- `frontend/index.html`: new `🔁 Sprint Change all` button in the header
+  toolbar, next to `Cancel stale on-hold`.
+- `frontend/app.js`: `sprintChangeBulk()` posts to the bulk endpoint,
+  toasts staged story/sub-task counts and any skipped keys, then
+  `refreshStageCount()` + `loadTree()` — same pattern as every other
+  write action here.
+- `docs/superpowers/specs/2026-07-17-sprint-change-design.md`: updated
+  Trigger & scope, Eligibility, API, and Frontend sections; removed "Bulk /
+  multi-story sprint change" from Out of scope.
+
+**Verified 2026-07-20** against live Jira (same curl-against-running-server
+approach as Task 5):
+
+- [x] Restarted the server to pick up the new code; confirmed
+  `GET /api/staging` → `{"ops": [], "count": 0}` before testing.
+- [x] `POST /api/sprint-change/bulk` → 5 qualifying stories
+  (`ISC-4672`, `ISC-4669`, `ISC-4140`, `ISC-4138`, `ISC-2570`), 6 sub-tasks
+  cloned across them, `errors: []`, `count: 22`. Verified the math:
+  5 stories + 6 sub-tasks = 11 creates, + 11 matching Done updates on the
+  originals = 22 total ops.
+- [x] Confirmed the relaxed sub-task rule: `ISC-4138`'s sub-task `ISC-4541`
+  (status "New", not overdue) and `ISC-4140`'s sub-task `ISC-4141` (status
+  "On Hold") were both pulled in — neither has/needs a due date on or
+  before today, only "open" (not Done) matters now.
+- [x] `DELETE /api/staging` → cleared the 22 test ops.
+- [x] Regression-checked the per-issue endpoint still works after the
+  refactor: `POST /api/issue/ISC-4650/sprint-change` (direct sub-task) →
+  `{"story": {...}, "subtasks": [], "count": 2}`, same as Task 5's Step 5b.
+- [x] `DELETE /api/staging` → confirmed `{"count": 0}` again. Server
+  stopped. Nothing pushed to Jira at any point.
+
+---
+
 ## After all tasks
 
 Push the branch:

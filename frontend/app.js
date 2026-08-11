@@ -1069,6 +1069,10 @@ async function submitCreate(category, parentRef) {
   const parentEl = document.getElementById("c-parent");
   const parent = parentEl ? parentEl.value.trim() : "";
   if (category === "Sub-task" && !parent) { toast("Sub-tasks need a parent key.", "error"); return; }
+  if (parent && !/^[A-Za-z]+-\d+$/.test(parent)) {
+    toast(`"${parent}" isn't a valid issue key — expected format like ISC-123.`, "error");
+    return;
+  }
 
   const labels = collectLabels("c-labels");
   const status = (document.getElementById("c-status") || {}).value || null;
